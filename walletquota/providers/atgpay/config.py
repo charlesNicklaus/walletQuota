@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
+from urllib.parse import urlsplit
 
 
 class ConfigError(ValueError):
@@ -131,8 +132,19 @@ class AtgSettings:
             raise ConfigError("ATG_REQUEST_DELAY_MS cannot be negative")
         if self.timeout_seconds <= 0:
             raise ConfigError("ATG_TIMEOUT_SECONDS must be greater than zero")
-        if not self.api_base.startswith("https://"):
-            raise ConfigError("ATG_API_BASE must use https://")
+        parsed = urlsplit(self.api_base)
+        trusted_endpoint = (
+            parsed.scheme == "https"
+            and parsed.hostname == "api.atg-game.com"
+            and parsed.port in {None, 443}
+            and parsed.username is None
+            and parsed.password is None
+            and parsed.path.rstrip("/") == "/app"
+            and not parsed.query
+            and not parsed.fragment
+        )
+        if not trusted_endpoint:
+            raise ConfigError("ATG_API_BASE must be the trusted ATG endpoint")
 
 
 def _prefer_channel_prefix(values: Mapping[str, str]) -> Dict[str, str]:

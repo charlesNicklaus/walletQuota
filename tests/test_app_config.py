@@ -76,6 +76,20 @@ class AppSettingsTests(TestCase):
         with self.assertRaises(ConfigError):
             AppSettings.from_values({"REPORT_DIRECTORY": ""})
 
+    def test_report_directory_prefers_new_name_and_falls_back_to_legacy(self):
+        legacy = AppSettings.from_values(
+            {"ATG_REPORT_DIRECTORY": "legacy-reports"}
+        )
+        preferred = AppSettings.from_values(
+            {
+                "REPORT_DIRECTORY": "new-reports",
+                "ATG_REPORT_DIRECTORY": "legacy-reports",
+            }
+        )
+
+        self.assertEqual(legacy.report_directory, Path("legacy-reports"))
+        self.assertEqual(preferred.report_directory, Path("new-reports"))
+
     def test_missing_env_file_is_rejected_without_secret_values(self):
         missing = Path("/private/tmp/no-wallet-quota-env")
 

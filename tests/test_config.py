@@ -82,6 +82,41 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.page_size, 10)
 
+    def test_only_the_allowlisted_atg_api_base_is_accepted(self):
+        accepted = self.write_env(
+            "ATG_PHONE=9876543210\n"
+            "ATG_PASSWORD=secret\n"
+            "ATG_API_BASE=https://api.atg-game.com/app/\n"
+        )
+
+        self.assertEqual(
+            Settings.load(accepted).api_base,
+            "https://api.atg-game.com/app",
+        )
+
+    def test_rejects_untrusted_or_ambiguous_atg_api_bases(self):
+        values = (
+            "https://attacker.example/app",
+            "https://api.atg-game.com.evil.example/app",
+            "https://api.atg-game.com@attacker.example/app",
+            "https://user:password@api.atg-game.com/app",
+            "https://api.atg-game.com:8443/app",
+            "https://api.atg-game.com/collect",
+            "https://api.atg-game.com/app?redirect=evil",
+            "https://api.atg-game.com/app#fragment",
+            "http://api.atg-game.com/app",
+        )
+        for api_base in values:
+            with self.subTest(api_base=api_base):
+                path = self.write_env(
+                    "ATG_PHONE=9876543210\n"
+                    "ATG_PASSWORD=secret\n"
+                    "ATG_API_BASE={}\n".format(api_base)
+                )
+
+                with self.assertRaisesRegex(ConfigError, "trusted ATG endpoint"):
+                    Settings.load(path)
+
 
 if __name__ == "__main__":
     unittest.main()

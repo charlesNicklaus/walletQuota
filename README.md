@@ -53,7 +53,7 @@ ENABLED_PROVIDERS=atgpay,xxxpay
 | `ATGPAY_REQUEST_DELAY_MS` | `150` | 分页请求之间的等待毫秒数 |
 | `ATGPAY_TIMEOUT_SECONDS` | `30` | 单次 HTTP 请求超时秒数 |
 
-旧版 `ATG_PHONE`、`ATG_PASSWORD` 和其他 `ATG_*` 配置仍然兼容；同一个配置同时出现时，新的 `ATGPAY_*` 优先。报告根目录只使用 `REPORT_DIRECTORY`，也可以通过 `--output-dir` 临时覆盖。
+旧版 `ATG_PHONE`、`ATG_PASSWORD` 和其他 `ATG_*` 配置仍然兼容；同一个配置同时出现时，新的 `ATGPAY_*` 优先。报告根目录优先使用 `REPORT_DIRECTORY`，缺失时回退到旧 `ATG_REPORT_DIRECTORY`，也可以通过 `--output-dir` 临时覆盖。
 
 ## 使用
 
@@ -157,7 +157,7 @@ python3 -m unittest discover -s tests -v
 
 - 凭据只从本地 `.env` 读取，不提供密码命令行参数。
 - 报告和日志不会写入密码、Token、Session Key、Cookie、签名或原始认证响应。
-- 每个 Provider 只允许访问其显式列出的 HTTPS 主机和只读订单池接口。
+- 每个 Provider 只允许访问其显式列出的 HTTPS 主机和只读订单池接口；ATG 基址固定为 `https://api.atg-game.com/app`。
 - ATG Pay 只允许调用：
 
 ```text

@@ -159,6 +159,29 @@ class CliTests(unittest.TestCase):
         self.assertEqual(overrides["page_size"], 25)
         self.assertEqual(writer.call_args.args[1], output_dir)
 
+    def test_compatibility_entry_honors_legacy_report_directory(self):
+        legacy_directory = self.root / "legacy-atg-reports"
+        self.env.write_text(
+            "ATG_PHONE=9876543210\n"
+            "ATG_PASSWORD=secret\n"
+            "ATG_REPORT_DIRECTORY={}\n".format(legacy_directory),
+            encoding="utf-8",
+        )
+        provider = StaticProvider(self.success_result())
+        with patch(
+            "atg_pool_report.build_providers", return_value=(provider,)
+        ), patch(
+            "atg_pool_report.write_report_bundle", return_value=self.bundle
+        ) as writer:
+            code = atg_pool_report.main(
+                ["--env-file", str(self.env)],
+                stdout=io.StringIO(),
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(writer.call_args.args[1], legacy_directory)
+
 
 if __name__ == "__main__":
     unittest.main()

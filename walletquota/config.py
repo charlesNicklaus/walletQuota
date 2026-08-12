@@ -101,7 +101,10 @@ class AppSettings:
             raw_names = list(enabled)
 
         if output_dir is None:
-            report_text = values.get("REPORT_DIRECTORY", "reports")
+            report_text = values.get(
+                "REPORT_DIRECTORY",
+                values.get("ATG_REPORT_DIRECTORY", "reports"),
+            )
             if not report_text.strip():
                 raise ConfigError("REPORT_DIRECTORY cannot be empty")
             report_directory = Path(report_text)

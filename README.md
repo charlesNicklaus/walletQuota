@@ -1,6 +1,16 @@
 # walletQuota
 
-按需登录 ATG Pay，读取当前订单池的全部分页，并生成订单数量、金额汇总和精确金额分布。工具只调用登录接口和只读订单池接口，不会接单、付款、提交 UTR、绑卡或修改账户设置。
+并发登录所有已启用的支付渠道，读取各自订单池全部分页，最后返回一个综合结果：
+
+```text
+total:    所有完整成功渠道的可信总计
+atgpay:   ATG Pay 的订单数、金额、金额分布或错误状态
+xxxpay:   后续渠道的结果或错误状态
+```
+
+一个渠道失败不会影响其他渠道。失败和不完整渠道会保留在报告中，但不会混入 `total`。
+
+当前已接入 `atgpay`；多渠道注册、并发、故障隔离和综合报告框架已经完成。工具只读取订单池，不会接单、付款、提交 UTR、绑卡或修改账户设置。
 
 ## 环境要求
 
@@ -9,104 +19,131 @@
 
 ## 配置
 
-复制配置模板：
-
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`，填写本地账号：
+在 `.env` 中填写本地账号：
 
 ```dotenv
-ATG_PHONE=你的印度手机号
-ATG_PASSWORD=你的密码
+ENABLED_PROVIDERS=atgpay
+ATGPAY_PHONE=你的印度手机号
+ATGPAY_PASSWORD=你的密码
+REPORT_DIRECTORY=reports
 ```
 
-`.env` 已被 Git 忽略。不要把密码、`loginToken`、`sessionKey`、Cookie、签名或验证码发送给其他人，也不要提交到仓库。
-
-默认统计已确认的订单池参数：
+`ENABLED_PROVIDERS` 用英文逗号分隔。未来接入其他渠道后，例如：
 
 ```dotenv
-ATG_SORT_TYPE=1
-ATG_ORDER_TYPE=4
-ATG_PAGE_SIZE=10
+ENABLED_PROVIDERS=atgpay,xxxpay
 ```
 
-完整的可选配置如下：
+程序会并发运行这里列出的所有渠道，并按照配置顺序输出结果。未知渠道会显示 `Provider is not registered`；如果没有任何已注册渠道，程序返回配置错误。
+
+`.env` 已被 Git 忽略。不要把密码、`loginToken`、`sessionKey`、Cookie、签名或验证码发送到聊天或提交到仓库。
+
+### ATG Pay 配置
 
 | 配置 | 默认值 | 说明 |
 | --- | --- | --- |
-| `ATG_API_BASE` | `https://api.atg-game.com/app` | API 基址，必须使用 HTTPS |
-| `ATG_SORT_TYPE` | `1` | 排序类型 |
-| `ATG_ORDER_TYPE` | `4` | 订单池类型 |
-| `ATG_PAGE_SIZE` | `10` | 每页数量，`1–1000`；默认沿用已确认的真实请求 |
-| `ATG_REQUEST_DELAY_MS` | `150` | 分页请求之间的等待毫秒数 |
-| `ATG_TIMEOUT_SECONDS` | `30` | 单次 HTTP 请求超时秒数 |
-| `ATG_REPORT_DIRECTORY` | `reports` | 报表目录 |
+| `ATGPAY_API_BASE` | `https://api.atg-game.com/app` | API 基址，必须使用 HTTPS |
+| `ATGPAY_SORT_TYPE` | `1` | 排序类型 |
+| `ATGPAY_ORDER_TYPE` | `4` | 订单池类型 |
+| `ATGPAY_PAGE_SIZE` | `10` | 每页数量，`1–1000` |
+| `ATGPAY_REQUEST_DELAY_MS` | `150` | 分页请求之间的等待毫秒数 |
+| `ATGPAY_TIMEOUT_SECONDS` | `30` | 单次 HTTP 请求超时秒数 |
+
+旧版 `ATG_PHONE`、`ATG_PASSWORD` 和其他 `ATG_*` 配置仍然兼容；同一个配置同时出现时，新的 `ATGPAY_*` 优先。报告根目录只使用 `REPORT_DIRECTORY`，也可以通过 `--output-dir` 临时覆盖。
 
 ## 使用
 
-生成一次最新报告：
+运行所有已启用渠道：
 
 ```bash
-python3 atg_pool_report.py
+python3 wallet_quota.py
 ```
 
-临时覆盖非敏感筛选参数：
+显示安全的渠道进度：
+
+```bash
+python3 wallet_quota.py --verbose
+```
+
+使用其他配置文件或报告目录：
+
+```bash
+python3 wallet_quota.py --env-file private.env --output-dir snapshots
+```
+
+旧 ATG 专用入口仍然可用。它只运行 `atgpay`，并保留原有筛选参数：
 
 ```bash
 python3 atg_pool_report.py --sort-type 1 --order-type 4 --page-size 10
 ```
 
-显示安全的进度信息：
+## 综合输出
 
-```bash
-python3 atg_pool_report.py --verbose
+终端先显示 `total`，再按配置顺序显示各渠道。例如：
+
+```text
+订单池综合报告
+==========================================================
+状态: partial
+total:
+  渠道: 成功 1 / 部分 0 / 失败 1
+  订单数: 299
+  总金额: ₹160500
+
+atgpay: success
+  订单数: 299
+  总金额: ₹160500
+  金额分布:
+    ₹522 × 200（66.89%，小计 ₹104400）
+
+xxxpay: error
+  错误: authentication / Authentication failed
 ```
 
-指定其他配置文件和输出目录：
+每次运行生成独立快照目录：
 
-```bash
-python3 atg_pool_report.py --env-file private.env --output-dir snapshots
+```text
+reports/20260812_153000/
+├── aggregate.json
+├── atgpay_orders.csv
+└── xxxpay_orders.csv
 ```
 
-## 输出
+- `aggregate.json` 包含顶层 `total`、全部渠道状态、摘要、金额分布、元数据和订单。
+- 成功渠道生成自己的订单 CSV。
+- 已取得订单的不完整渠道也生成 CSV，但不进入 `total`。
+- 没有订单的错误渠道不生成空 CSV。
+- 同一秒多次执行会使用 `_2`、`_3` 目录，不覆盖历史结果。
 
-终端会显示：
+所有金额按 INR 汇总。跨渠道订单唯一键是“渠道名 + 订单号”，不同渠道相同订单号不会互相覆盖。
 
-- API 返回的订单池总数和实际收集数量
-- 订单金额合计、最低、最高、平均和中位数
-- 收益合计及含收益金额合计
-- 每个订单金额对应的订单数、占比和小计
-- 分页抓取是否完整、抓取期间订单池是否发生变化
+## 状态和退出码
 
-每次运行还会在 `reports/` 生成：
+- `success`：所有启用渠道均成功且分页完整。
+- `partial`：至少一个渠道失败或分页不完整，综合报告仍已生成。
 
-- `atg_pool_YYYYMMDD_HHMMSS.csv`：逐笔订单明细
-- `atg_pool_YYYYMMDD_HHMMSS.json`：元数据、汇总、金额分布和订单明细
+命令退出码：
 
-不完整快照的两个文件名都会带 `_partial`，防止离开终端上下文后被误当作完整数据。
+- `0`：全部渠道成功且完整。
+- `1`：程序级错误，例如无法写报告。
+- `2`：基础配置错误，例如配置文件不存在或没有可运行的已注册渠道。
+- `3`：至少一个渠道失败或不完整，但其他结果与综合报告可用。
 
-CSV 字段包括订单号、订单金额、收益、含收益金额、费率、费用和 VIP 标志。JSON 还包含完整性、稳定性、已读取页数、观察到的 API 总数及金额分布。如果收益字段只在部分订单中出现，终端会明确显示覆盖数量，而不会把缺失值当成零。
+## 新增渠道
 
-报告中不会写入密码或可复用的会话信息。
+每个渠道都是独立 Provider。接入新渠道需要：
 
-## 退出码
+1. 在 `walletquota/providers/<渠道名>/` 实现本渠道配置、认证、分页和标准订单映射。
+2. 返回统一 `ProviderResult`，状态只能是 `success`、`partial` 或 `error`。
+3. 使用本地假响应增加登录、分页、错误脱敏和 Provider 契约测试。
+4. 在 `walletquota/registry.py` 的 `PROVIDER_FACTORIES` 中显式注册。
+5. 在 `.env` 中加入渠道配置并把名称添加到 `ENABLED_PROVIDERS`。
 
-- `0`：报告完整
-- `1`：网络、API、数据格式或写文件错误
-- `2`：本地配置错误
-- `3`：已保存报告，但分页快照不完整
-
-如果订单池在逐页抓取期间变化，报告会标记为“不稳定”。这是跨页读取实时订单池的正常可能性，不应将它当作同一时刻的原子快照。
-
-## 常见问题
-
-- `Configuration file not found`：先执行 `cp .env.example .env` 并填写账号。
-- `ATG authentication failed`：检查手机号、密码和账户状态。认证响应会被脱敏，不会原样打印。
-- HTTP 429/5xx 或临时网络错误：程序会有限重试；持续失败时稍后重跑。代理或 DNS 也可能影响连接。
-- 退出码 `3` 或文件名含 `_partial`：API 的 `total` 与收集到的唯一订单数不一致。订单池可能在分页期间变化，可立即再运行一次。
-- 签名或数据格式错误：网站可能更新了接口契约。程序不会猜测其他接口或绕过安全控制。
+聚合器、Runner 和报告层不需要因新增渠道而修改。
 
 ## 测试
 
@@ -114,15 +151,18 @@ CSV 字段包括订单号、订单金额、收益、含收益金额、费率、�
 python3 -m unittest discover -s tests -v
 ```
 
-测试使用本地假响应，不需要真实账号，也不会访问 ATG API。
+测试使用本地假响应，不需要真实账号，也不会访问支付接口。
 
 ## 安全边界
 
-程序只允许访问以下两个固定路径：
+- 凭据只从本地 `.env` 读取，不提供密码命令行参数。
+- 报告和日志不会写入密码、Token、Session Key、Cookie、签名或原始认证响应。
+- 每个 Provider 只允许访问其显式列出的 HTTPS 主机和只读订单池接口。
+- ATG Pay 只允许调用：
 
 ```text
 POST /auth/login
 POST /pay/debit/task
 ```
 
-它不会绕过 Cloudflare、验证码、登录或访问控制。若服务端修改接口或签名规则，程序会明确失败，不会改用其他端点猜测。
+程序不会绕过 Cloudflare、验证码、登录或访问控制。服务端修改接口或签名规则时会安全失败，不会猜测或调用其他端点。

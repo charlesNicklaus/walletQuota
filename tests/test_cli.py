@@ -1,106 +1,124 @@
 import io
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
 import atg_pool_report
-from atg_pool.client import APIError
-from atg_pool.config import ConfigError, Settings
-from atg_pool.pool import PoolSnapshot
+from walletquota.models import Order, ProviderResult
+from walletquota.reporting import ReportBundle
 
 
-def value_snapshot(complete=True):
-    stamp = datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc)
-    return PoolSnapshot(
-        orders=(),
-        observed_totals=(0 if complete else 3,),
-        pages_fetched=1,
-        duplicate_count=0,
-        complete=complete,
-        stable=True,
-        stop_reason="reached_total" if complete else "empty_page",
-        sort_type=1,
-        order_type=4,
-        started_at=stamp,
-        finished_at=stamp,
-    )
+class StaticProvider:
+    name = "atgpay"
+
+    def __init__(self, result):
+        self.result = result
+        self.calls = 0
+
+    def run(self):
+        self.calls += 1
+        return self.result
 
 
 class CliTests(unittest.TestCase):
     def setUp(self):
-        self.settings = Settings(phone="9876543210", password="secret")
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
+        self.root = Path(self.temp_dir.name)
+        self.env = self.root / ".env"
+        self.env.write_text(
+            "ATG_PHONE=9876543210\nATG_PASSWORD=secret\n",
+            encoding="utf-8",
+        )
+        self.bundle = ReportBundle(
+            self.root / "bundle",
+            self.root / "bundle" / "aggregate.json",
+            {"atgpay": self.root / "bundle" / "atgpay_orders.csv"},
+        )
 
-    def test_success_prints_summary_and_report_paths(self):
+    @staticmethod
+    def success_result():
+        return ProviderResult.success(
+            "atgpay",
+            (Order("atgpay", "A1", Decimal("10")),),
+            {},
+        )
+
+    def test_success_prints_aggregate_summary_and_report_paths(self):
         stdout = io.StringIO()
-        snapshot = value_snapshot()
-        csv_path = Path(self.temp_dir.name) / "report.csv"
-        json_path = Path(self.temp_dir.name) / "report.json"
-        with patch("atg_pool_report.Settings.load", return_value=self.settings), patch(
-            "atg_pool_report.AtgClient"
-        ) as client_type, patch(
-            "atg_pool_report.collect_pool", return_value=snapshot
+        provider = StaticProvider(self.success_result())
+        with patch(
+            "atg_pool_report.build_providers", return_value=(provider,)
         ), patch(
-            "atg_pool_report.build_summary", return_value={}
-        ), patch(
-            "atg_pool_report.format_terminal_report", return_value="POOL SUMMARY"
-        ), patch(
-            "atg_pool_report.write_reports", return_value=(csv_path, json_path)
+            "atg_pool_report.write_report_bundle", return_value=self.bundle
         ):
-            client_type.return_value.login.return_value = None
-            code = atg_pool_report.main([], stdout=stdout, stderr=io.StringIO())
+            code = atg_pool_report.main(
+                ["--env-file", str(self.env)], stdout=stdout, stderr=io.StringIO()
+            )
 
         output = stdout.getvalue()
         self.assertEqual(code, 0)
-        self.assertIn("POOL SUMMARY", output)
-        self.assertIn(str(csv_path), output)
-        self.assertIn(str(json_path), output)
+        self.assertEqual(provider.calls, 1)
+        self.assertIn("total:", output)
+        self.assertIn("atgpay: success", output)
+        self.assertIn(str(self.bundle.aggregate_json), output)
+        self.assertIn(str(self.bundle.channel_csv["atgpay"]), output)
 
-    def test_configuration_error_returns_2(self):
+    def test_configuration_error_returns_two(self):
         stderr = io.StringIO()
-        with patch(
-            "atg_pool_report.Settings.load", side_effect=ConfigError("missing .env")
-        ):
-            code = atg_pool_report.main([], stdout=io.StringIO(), stderr=stderr)
+
+        code = atg_pool_report.main(
+            ["--env-file", str(self.root / "missing.env")],
+            stdout=io.StringIO(),
+            stderr=stderr,
+        )
 
         self.assertEqual(code, 2)
-        self.assertIn("missing .env", stderr.getvalue())
+        self.assertIn("Configuration file not found", stderr.getvalue())
 
-    def test_api_error_returns_1_without_traceback(self):
+    def test_channel_error_is_reported_and_returns_three(self):
         stderr = io.StringIO()
-        with patch("atg_pool_report.Settings.load", return_value=self.settings), patch(
-            "atg_pool_report.AtgClient"
-        ) as client_type:
-            client_type.return_value.login.side_effect = APIError("login failed")
-            code = atg_pool_report.main([], stdout=io.StringIO(), stderr=stderr)
-
-        self.assertEqual(code, 1)
-        self.assertEqual(stderr.getvalue().strip(), "错误: login failed")
-
-    def test_incomplete_snapshot_is_saved_and_returns_3(self):
-        snapshot = value_snapshot(complete=False)
-        with patch("atg_pool_report.Settings.load", return_value=self.settings), patch(
-            "atg_pool_report.AtgClient"
-        ) as client_type, patch(
-            "atg_pool_report.collect_pool", return_value=snapshot
+        stdout = io.StringIO()
+        provider = StaticProvider(
+            ProviderResult.failure("atgpay", "api", "ATG Pay API request failed")
+        )
+        with patch(
+            "atg_pool_report.build_providers", return_value=(provider,)
         ), patch(
-            "atg_pool_report.build_summary", return_value={}
-        ), patch(
-            "atg_pool_report.format_terminal_report", return_value="INCOMPLETE"
-        ), patch(
-            "atg_pool_report.write_reports",
-            return_value=(Path("partial.csv"), Path("partial.json")),
-        ) as write_reports:
-            client_type.return_value.login.return_value = None
+            "atg_pool_report.write_report_bundle", return_value=self.bundle
+        ):
             code = atg_pool_report.main(
-                [], stdout=io.StringIO(), stderr=io.StringIO()
+                ["--env-file", str(self.env)], stdout=stdout, stderr=stderr
             )
 
         self.assertEqual(code, 3)
-        write_reports.assert_called_once()
+        self.assertIn("atgpay: error", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_partial_result_is_saved_and_returns_three(self):
+        provider = StaticProvider(
+            ProviderResult.partial(
+                "atgpay",
+                (Order("atgpay", "A1", Decimal("10")),),
+                {},
+                "Snapshot incomplete",
+            )
+        )
+        with patch(
+            "atg_pool_report.build_providers", return_value=(provider,)
+        ), patch(
+            "atg_pool_report.write_report_bundle", return_value=self.bundle
+        ) as writer:
+            code = atg_pool_report.main(
+                ["--env-file", str(self.env)],
+                stdout=io.StringIO(),
+                stderr=io.StringIO(),
+            )
+
+        self.assertEqual(code, 3)
+        writer.assert_called_once()
 
     def test_parser_does_not_offer_secret_arguments(self):
         help_text = atg_pool_report.build_parser().format_help().lower()
@@ -110,21 +128,18 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("token", help_text)
         self.assertIn("--sort-type", help_text)
 
-    def test_non_secret_cli_values_are_forwarded_as_overrides(self):
-        output_dir = Path(self.temp_dir.name) / "custom"
-        snapshot = value_snapshot()
-        with patch("atg_pool_report.Settings.load", return_value=self.settings) as load, patch(
-            "atg_pool_report.AtgClient"
-        ) as client_type, patch(
-            "atg_pool_report.collect_pool", return_value=snapshot
-        ), patch("atg_pool_report.build_summary", return_value={}), patch(
-            "atg_pool_report.format_terminal_report", return_value="OK"
-        ), patch(
-            "atg_pool_report.write_reports", return_value=(Path("a"), Path("b"))
-        ):
-            client_type.return_value.login.return_value = None
+    def test_non_secret_cli_values_are_forwarded_to_atgpay(self):
+        output_dir = self.root / "custom"
+        provider = StaticProvider(self.success_result())
+        with patch(
+            "atg_pool_report.build_providers", return_value=(provider,)
+        ) as build, patch(
+            "atg_pool_report.write_report_bundle", return_value=self.bundle
+        ) as writer:
             atg_pool_report.main(
                 [
+                    "--env-file",
+                    str(self.env),
                     "--sort-type",
                     "2",
                     "--order-type",
@@ -138,11 +153,11 @@ class CliTests(unittest.TestCase):
                 stderr=io.StringIO(),
             )
 
-        overrides = load.call_args.kwargs["overrides"]
+        overrides = build.call_args.kwargs["overrides"]["atgpay"]
         self.assertEqual(overrides["sort_type"], 2)
         self.assertEqual(overrides["order_type"], 5)
         self.assertEqual(overrides["page_size"], 25)
-        self.assertEqual(overrides["report_directory"], output_dir)
+        self.assertEqual(writer.call_args.args[1], output_dir)
 
 
 if __name__ == "__main__":

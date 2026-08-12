@@ -132,17 +132,20 @@ class AtgSettings:
             raise ConfigError("ATG_REQUEST_DELAY_MS cannot be negative")
         if self.timeout_seconds <= 0:
             raise ConfigError("ATG_TIMEOUT_SECONDS must be greater than zero")
-        parsed = urlsplit(self.api_base)
-        trusted_endpoint = (
-            parsed.scheme == "https"
-            and parsed.hostname == "api.atg-game.com"
-            and parsed.port in {None, 443}
-            and parsed.username is None
-            and parsed.password is None
-            and parsed.path.rstrip("/") == "/app"
-            and not parsed.query
-            and not parsed.fragment
-        )
+        try:
+            parsed = urlsplit(self.api_base)
+            trusted_endpoint = (
+                parsed.scheme == "https"
+                and parsed.hostname == "api.atg-game.com"
+                and parsed.port in {None, 443}
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.path.rstrip("/") == "/app"
+                and not parsed.query
+                and not parsed.fragment
+            )
+        except ValueError:
+            trusted_endpoint = False
         if not trusted_endpoint:
             raise ConfigError("ATG_API_BASE must be the trusted ATG endpoint")
 

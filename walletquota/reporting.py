@@ -34,11 +34,9 @@ def _decimal_text(value: Optional[Decimal]) -> str:
 
 def _distribution_lines(summary: Mapping[str, Any]):
     rows = summary["amount_distribution"]
-    if not rows:
-        return ["    （当前没有订单）"]
     return [
-        "    ₹{} × {}（{}%，小计 ₹{}）".format(
-            _decimal_text(row["amount"]),
+        "    范围 {} × {}（{}%，小计 ₹{}）".format(
+            row["label"],
             row["count"],
             _decimal_text(row["percentage"]),
             _decimal_text(row["subtotal"]),

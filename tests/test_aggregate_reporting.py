@@ -54,8 +54,8 @@ class TerminalReportTests(TestCase):
         self.assertIn("渠道: 成功 1 / 部分 1 / 失败 1", report)
         self.assertIn("订单数: 2", report)
         self.assertIn("总金额: ₹1052", report)
-        self.assertIn("₹522 × 1", report)
-        self.assertIn("₹530 × 1", report)
+        self.assertIn("范围 100-10000 × 2（100%，小计 ₹1052）", report)
+        self.assertIn("范围 <100 × 0（0%，小计 ₹0）", report)
         self.assertIn("订单数: 1（不计入 total）", report)
         self.assertIn("错误: authentication / Authentication failed", report)
 

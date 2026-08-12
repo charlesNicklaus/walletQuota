@@ -1,4 +1,3 @@
-from collections import Counter
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -6,6 +5,13 @@ from .models import Order
 
 
 CENT = Decimal("0.01")
+AMOUNT_BUCKETS = (
+    ("below_100", "<100", None, Decimal("100"), False, False),
+    ("100_10000", "100-10000", Decimal("100"), Decimal("10000"), True, False),
+    ("10000_20000", "10000-20000", Decimal("10000"), Decimal("20000"), True, False),
+    ("20000_50000", "20000-50000", Decimal("20000"), Decimal("50000"), True, True),
+    ("above_50000", ">50000", Decimal("50000"), None, False, False),
+)
 
 
 def _sum_optional(
@@ -31,6 +37,38 @@ def _median(amounts: List[Decimal]) -> Optional[Decimal]:
     return (ordered[midpoint - 1] + ordered[midpoint]) / Decimal("2")
 
 
+def _amount_distribution(orders: Sequence[Order]) -> List[Dict[str, Any]]:
+    rows = []
+    order_count = len(orders)
+    for key, label, minimum, maximum, minimum_inclusive, maximum_inclusive in AMOUNT_BUCKETS:
+        amounts = [
+            order.amount
+            for order in orders
+            if (minimum is None or order.amount > minimum or (minimum_inclusive and order.amount == minimum))
+            and (maximum is None or order.amount < maximum or (maximum_inclusive and order.amount == maximum))
+        ]
+        count = len(amounts)
+        percentage = Decimal("0.00")
+        if order_count:
+            percentage = (
+                Decimal(count) * Decimal("100") / Decimal(order_count)
+            ).quantize(CENT, rounding=ROUND_HALF_UP)
+        rows.append(
+            {
+                "key": key,
+                "label": label,
+                "minimum": minimum,
+                "maximum": maximum,
+                "minimum_inclusive": minimum_inclusive,
+                "maximum_inclusive": maximum_inclusive,
+                "count": count,
+                "percentage": percentage,
+                "subtotal": sum(amounts, Decimal("0")),
+            }
+        )
+    return rows
+
+
 def empty_summary() -> Dict[str, Any]:
     return {
         "order_count": 0,
@@ -43,7 +81,7 @@ def empty_summary() -> Dict[str, Any]:
         "income_coverage": 0,
         "total_balance": None,
         "balance_coverage": 0,
-        "amount_distribution": [],
+        "amount_distribution": _amount_distribution(()),
     }
 
 
@@ -55,22 +93,6 @@ def summarize_orders(orders: Sequence[Order]) -> Dict[str, Any]:
     amounts = [order.amount for order in orders]
     order_count = len(amounts)
     order_amount = sum(amounts, Decimal("0"))
-    buckets = Counter(amounts)
-    distribution = []
-    for amount in sorted(buckets):
-        count = buckets[amount]
-        percentage = (
-            Decimal(count) * Decimal("100") / Decimal(order_count)
-        ).quantize(CENT, rounding=ROUND_HALF_UP)
-        distribution.append(
-            {
-                "amount": amount,
-                "count": count,
-                "percentage": percentage,
-                "subtotal": amount * count,
-            }
-        )
-
     total_income, income_coverage = _sum_optional(orders, "income")
     total_balance, balance_coverage = _sum_optional(orders, "balance")
     return {
@@ -84,5 +106,5 @@ def summarize_orders(orders: Sequence[Order]) -> Dict[str, Any]:
         "income_coverage": income_coverage,
         "total_balance": total_balance,
         "balance_coverage": balance_coverage,
-        "amount_distribution": distribution,
+        "amount_distribution": _amount_distribution(orders),
     }

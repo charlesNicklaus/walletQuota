@@ -1,0 +1,101 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "total": 299,
+    "list": [
+      {
+        "orderNo": "AP2eashuyvnc",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuyzq5",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuy2gc",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuyk1t",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuytqo",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuyhz1",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuylgs",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuytvg",
+        "orderAmount": 522,
+        "income": 18.66,
+        "balance": 540.66,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashuyyuw",
+        "orderAmount": 530,
+        "income": 18.9,
+        "balance": 548.9,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      },
+      {
+        "orderNo": "AP2eashux6mm",
+        "orderAmount": 534,
+        "income": 19.02,
+        "balance": 553.02,
+        "inrRechargeRate": 3,
+        "inrRechargeFee": 3,
+        "vip": 0
+      }
+    ],
+    "inrBuyConfig": "",
+    "inrTodayBuyCount": 0
+  }
+}

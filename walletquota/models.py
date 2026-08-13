@@ -15,6 +15,9 @@ class _ImmutableTuple(tuple):
             return tuple(self) == tuple(other)
         return tuple.__eq__(self, other)
 
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
+
 
 def _freeze(value: Any) -> Any:
     if isinstance(value, Mapping):

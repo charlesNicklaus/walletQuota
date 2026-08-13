@@ -126,6 +126,12 @@ class ProviderResultTests(TestCase):
         with self.assertRaises(TypeError):
             result.metadata["responses"][0]["state"] = "result-change"
 
+    def test_frozen_metadata_sequences_have_consistent_list_comparisons(self):
+        result = ProviderResult.success("atgpay", (), {"warnings": ["one"]})
+
+        self.assertTrue(result.metadata["warnings"] == ["one"])
+        self.assertFalse(result.metadata["warnings"] != ["one"])
+
     def test_partial_and_failure_have_safe_error_models(self):
         order = Order("atgpay", "A1", Decimal("10"))
         partial = ProviderResult.partial(

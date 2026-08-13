@@ -94,6 +94,10 @@ def pool_response(total=1):
     }
 
 
+def read_response(**data):
+    return {"code": 200, "message": "success", "data": data}
+
+
 class AtgClientTests(unittest.TestCase):
     def test_login_is_unsigned_and_extracts_session(self):
         transport = ScriptedTransport([login_response()])
@@ -256,6 +260,133 @@ class AtgClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(APIError, "bad filters"):
             client.fetch_pool_page(1, 10, 1, 4)
+
+    def test_fetch_bound_upis_logs_in_and_signs_account_type_payload(self):
+        transport = ScriptedTransport([login_response(), read_response(list=[])])
+        client = AtgClient(
+            settings(), transport=transport, sleep=lambda _: None, clock_ms=lambda: 101
+        )
+
+        result = client.fetch_bound_upis()
+
+        call = transport.calls[1]
+        expected = {"accountType": 1, "ts": 101, "userId": 50095029}
+        self.assertEqual(
+            call["url"], "https://api.atg-game.com/app/user/upi/bind/list"
+        )
+        self.assertEqual(call["payload"], expected)
+        self.assertEqual(call["headers"]["Signature"], make_signature("session-one", expected))
+        self.assertEqual(result, {"list": []})
+
+    def test_fetch_bank_cards_logs_in_and_signs_final_payload(self):
+        transport = ScriptedTransport([login_response(), read_response(list=[])])
+        client = AtgClient(
+            settings(), transport=transport, sleep=lambda _: None, clock_ms=lambda: 102
+        )
+
+        result = client.fetch_bank_cards()
+
+        call = transport.calls[1]
+        expected = {"ts": 102, "userId": 50095029}
+        self.assertEqual(call["url"], "https://api.atg-game.com/app/bank/debit/card/list")
+        self.assertEqual(call["payload"], expected)
+        self.assertEqual(call["headers"]["Signature"], make_signature("session-one", expected))
+        self.assertEqual(result, {"list": []})
+
+    def test_fetch_my_tasks_page_signs_pagination_payload(self):
+        transport = ScriptedTransport([login_response(), read_response(total=0, list=[])])
+        client = AtgClient(
+            settings(), transport=transport, sleep=lambda _: None, clock_ms=lambda: 103
+        )
+
+        result = client.fetch_my_tasks_page(2, 15)
+
+        call = transport.calls[1]
+        expected = {"page": 2, "size": 15, "ts": 103, "userId": 50095029}
+        self.assertEqual(call["url"], "https://api.atg-game.com/app/pay/my/task")
+        self.assertEqual(call["payload"], expected)
+        self.assertEqual(call["headers"]["Signature"], make_signature("session-one", expected))
+        self.assertEqual(result, {"total": 0, "list": []})
+
+    def test_fetch_order_detail_signs_order_number_payload(self):
+        transport = ScriptedTransport([login_response(), read_response(orderNo="ATG-42")])
+        client = AtgClient(
+            settings(), transport=transport, sleep=lambda _: None, clock_ms=lambda: 104
+        )
+
+        result = client.fetch_order_detail("ATG-42")
+
+        call = transport.calls[1]
+        expected = {"orderNo": "ATG-42", "ts": 104, "userId": 50095029}
+        self.assertEqual(call["url"], "https://api.atg-game.com/app/pay/order/detail")
+        self.assertEqual(call["payload"], expected)
+        self.assertEqual(call["headers"]["Signature"], make_signature("session-one", expected))
+        self.assertEqual(result, {"orderNo": "ATG-42"})
+
+    def test_signed_read_relogs_once_and_rebuilds_signature_after_session_code(self):
+        transport = ScriptedTransport(
+            [
+                login_response("session-one"),
+                {"code": 1002, "message": "refresh required", "data": {}},
+                login_response("session-two"),
+                read_response(list=[]),
+            ]
+        )
+        timestamps = iter([201, 202])
+        client = AtgClient(
+            settings(),
+            transport=transport,
+            sleep=lambda _: None,
+            clock_ms=lambda: next(timestamps),
+        )
+
+        client.fetch_bound_upis(2)
+
+        first_read, retry_read = transport.calls[1], transport.calls[3]
+        self.assertEqual(transport.calls[2]["url"], "https://api.atg-game.com/app/auth/login")
+        self.assertEqual(first_read["payload"]["ts"], 201)
+        self.assertEqual(retry_read["payload"]["ts"], 202)
+        self.assertEqual(
+            retry_read["headers"]["Signature"],
+            make_signature("session-two", retry_read["payload"]),
+        )
+
+    def test_signed_read_does_not_relog_more_than_once(self):
+        transport = ScriptedTransport(
+            [
+                login_response(),
+                {"code": 1001, "message": "expired", "data": {}},
+                login_response("session-two"),
+                {"code": 1001, "message": "expired", "data": {}},
+            ]
+        )
+        client = AtgClient(
+            settings(), transport=transport, sleep=lambda _: None, clock_ms=lambda: 1
+        )
+
+        with self.assertRaises(AuthenticationError):
+            client.fetch_bank_cards()
+
+        self.assertEqual(len(transport.calls), 4)
+
+    def test_signed_read_rejects_empty_order_numbers_and_invalid_pagination_locally(self):
+        transport = ScriptedTransport([])
+        client = AtgClient(settings(), transport=transport, sleep=lambda _: None)
+
+        with self.assertRaisesRegex(ValueError, "order number"):
+            client.fetch_order_detail("")
+        with self.assertRaisesRegex(ValueError, "page"):
+            client.fetch_my_tasks_page(0, 10)
+        with self.assertRaisesRegex(ValueError, "size"):
+            client.fetch_my_tasks_page(1, 0)
+
+        self.assertEqual(transport.calls, [])
+
+    def test_url_rejects_non_allowlisted_endpoints(self):
+        client = AtgClient(settings(), transport=ScriptedTransport([]), sleep=lambda _: None)
+
+        with self.assertRaisesRegex(APIError, "Unsupported API endpoint"):
+            client._url("/arbitrary/read")
 
 
 if __name__ == "__main__":

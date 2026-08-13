@@ -1,16 +1,21 @@
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Tuple, Union
 
 from walletquota.models import Order, ProviderResult
 
+from .accounts import AccountSnapshot, collect_accounts
 from .client import APIError, AtgClient, AuthenticationError
 from .config import AtgSettings, ConfigError
 from .pool import PoolDataError, PoolSnapshot, collect_pool
 
 
-def _collect(settings: AtgSettings) -> PoolSnapshot:
+CollectionResult = Union[PoolSnapshot, Tuple[PoolSnapshot, AccountSnapshot]]
+
+
+def _collect(settings: AtgSettings) -> CollectionResult:
     client = AtgClient(settings)
     client.login()
-    return collect_pool(client, settings)
+    snapshot = collect_pool(client, settings)
+    return snapshot, collect_accounts(client)
 
 
 class AtgPayProvider:
@@ -18,7 +23,7 @@ class AtgPayProvider:
         self,
         values: Mapping[str, str],
         overrides: Optional[Mapping[str, Any]] = None,
-        collect: Callable[[AtgSettings], PoolSnapshot] = _collect,
+        collect: Callable[[AtgSettings], CollectionResult] = _collect,
     ) -> None:
         self._values = dict(values)
         self._overrides = dict(overrides or {})
@@ -48,8 +53,8 @@ class AtgPayProvider:
         )
 
     @staticmethod
-    def _metadata(snapshot: PoolSnapshot):
-        return {
+    def _metadata(snapshot: PoolSnapshot, accounts: AccountSnapshot):
+        metadata = {
             "started_at": snapshot.started_at.isoformat(),
             "finished_at": snapshot.finished_at.isoformat(),
             "pages_fetched": snapshot.pages_fetched,
@@ -60,20 +65,57 @@ class AtgPayProvider:
             "sort_type": snapshot.sort_type,
             "order_type": snapshot.order_type,
             "inr_today_buy_count": snapshot.inr_today_buy_count,
+            "bound_upi_total": accounts.bound_upi_total,
+            "bank_card_total": accounts.bank_card_total,
+            "claimed_task_total": accounts.claimed_task_total,
+            "account_warnings": AtgPayProvider._safe_account_warnings(
+                accounts.warnings
+            ),
         }
+        return metadata
+
+    @staticmethod
+    def _safe_account_warnings(warnings):
+        allowed = {
+            "ATG account failed",
+            "ATG bound UPI account collection failed",
+            "ATG bank card account collection failed",
+            "ATG claimed task collection failed",
+            "ATG claimed task pagination is inconsistent",
+            "ATG claimed task page limit reached",
+            "ATG claimed order detail collection failed",
+        }
+        safe = []
+        for warning in warnings:
+            prefix = str(warning).partition(":")[0]
+            value = prefix if prefix in allowed else "ATG account collection failed"
+            if value not in safe:
+                safe.append(value)
+        return safe
 
     def run(self) -> ProviderResult:
         try:
             self.settings = AtgSettings.from_values(
                 self._values, overrides=self._overrides
             )
-            snapshot = self._collect(self.settings)
+            collected = self._collect(self.settings)
+            if isinstance(collected, tuple):
+                snapshot, account_snapshot = collected
+            else:
+                snapshot = collected
+                account_snapshot = AccountSnapshot.empty()
             orders = self._orders(snapshot)
-            metadata = self._metadata(snapshot)
+            metadata = self._metadata(snapshot, account_snapshot)
             if snapshot.complete:
-                return ProviderResult.success(self.name, orders, metadata)
+                return ProviderResult.success(
+                    self.name, orders, metadata, account_snapshot.accounts
+                )
             return ProviderResult.partial(
-                self.name, orders, metadata, "ATG order-pool snapshot is incomplete"
+                self.name,
+                orders,
+                metadata,
+                "ATG order-pool snapshot is incomplete",
+                account_snapshot.accounts,
             )
         except ConfigError:
             return ProviderResult.failure(

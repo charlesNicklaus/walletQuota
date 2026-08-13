@@ -6,6 +6,8 @@ from unittest import TestCase
 from atg_pool.client import APIError, AuthenticationError
 from atg_pool.pool import Order as AtgOrder
 from atg_pool.pool import PoolDataError, PoolSnapshot
+from walletquota.models import Account
+from walletquota.providers.atgpay.accounts import AccountSnapshot
 from walletquota.providers.atgpay.provider import AtgPayProvider
 
 
@@ -36,7 +38,68 @@ def complete_snapshot(complete=True):
     )
 
 
+def account_snapshot(warnings=()):
+    return AccountSnapshot(
+        (
+            Account(
+                "atgpay",
+                "bound_upi",
+                "upi-1",
+                upi="alice@paytm",
+                attributes={"status": 1},
+            ),
+        ),
+        tuple(warnings),
+        1,
+        0,
+        0,
+    )
+
+
 class AtgPayProviderTests(TestCase):
+    def test_returns_pool_orders_and_best_effort_accounts_together(self):
+        provider = AtgPayProvider(
+            {"ATGPAY_PHONE": "phone", "ATGPAY_PASSWORD": "password"},
+            collect=lambda settings: (complete_snapshot(), account_snapshot()),
+        )
+
+        result = provider.run()
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual([order.order_id for order in result.orders], ["AP1"])
+        self.assertEqual([account.upi for account in result.accounts], ["alice@paytm"])
+        self.assertEqual(result.metadata["bound_upi_total"], 1)
+        self.assertEqual(result.metadata["bank_card_total"], 0)
+        self.assertEqual(result.metadata["claimed_task_total"], 0)
+        self.assertEqual(result.metadata["account_warnings"], [])
+
+    def test_account_collection_warning_keeps_a_complete_pool_success_and_is_safe(self):
+        provider = AtgPayProvider(
+            {"ATGPAY_PHONE": "phone", "ATGPAY_PASSWORD": "password"},
+            collect=lambda settings: (
+                complete_snapshot(),
+                account_snapshot(("ATG account failed: raw-secret-response",)),
+            ),
+        )
+
+        result = provider.run()
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.metadata["account_warnings"], ["ATG account failed"])
+        self.assertNotIn("raw-secret-response", str(result.metadata))
+
+    def test_legacy_pool_only_collect_seam_receives_an_empty_account_snapshot(self):
+        provider = AtgPayProvider(
+            {"ATGPAY_PHONE": "phone", "ATGPAY_PASSWORD": "password"},
+            collect=lambda settings: complete_snapshot(),
+        )
+
+        result = provider.run()
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.accounts, ())
+        self.assertEqual(result.metadata["account_warnings"], [])
+
     def test_maps_complete_atg_snapshot_to_standard_result(self):
         provider = AtgPayProvider(
             {"ATGPAY_PHONE": "9000000000", "ATGPAY_PASSWORD": "secret"},

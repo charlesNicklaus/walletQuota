@@ -22,13 +22,16 @@ CSV_FIELDS = [
     "attributes",
 ]
 
-_CREDENTIAL_ATTRIBUTE_FRAGMENTS = (
+_CREDENTIAL_ATTRIBUTE_NAMES = frozenset(
+    {"password", "token", "cookie", "session", "signature", "secret", "sign"}
+)
+_CREDENTIAL_ATTRIBUTE_AFFIXES = (
     "password",
     "token",
     "cookie",
     "session",
     "signature",
-    "sign",
+    "secret",
 )
 
 
@@ -147,6 +150,27 @@ def _json_value(value: Any) -> Any:
     return value
 
 
+def _safe_account_attributes(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _safe_account_attributes(item)
+            for key, item in value.items()
+            if not _is_credential_attribute(key)
+        }
+    if isinstance(value, (list, tuple)):
+        return [_safe_account_attributes(item) for item in value]
+    return value
+
+
+def _is_credential_attribute(key: Any) -> bool:
+    normalized = str(key).replace("_", "").replace("-", "").lower()
+    return (
+        normalized in _CREDENTIAL_ATTRIBUTE_NAMES
+        or normalized.endswith(_CREDENTIAL_ATTRIBUTE_AFFIXES)
+        or normalized.startswith(_CREDENTIAL_ATTRIBUTE_AFFIXES)
+    )
+
+
 def _account_dict(account: Account) -> Dict[str, Any]:
     return {
         "provider": account.provider,
@@ -157,16 +181,7 @@ def _account_dict(account: Account) -> Dict[str, Any]:
         "bank_name": account.bank_name,
         "ifsc": account.ifsc,
         "order_id": account.order_id,
-        "attributes": _json_value(
-            {
-                key: value
-                for key, value in account.attributes.items()
-                if not any(
-                    fragment in str(key).replace("_", "").lower()
-                    for fragment in _CREDENTIAL_ATTRIBUTE_FRAGMENTS
-                )
-            }
-        ),
+        "attributes": _json_value(_safe_account_attributes(account.attributes)),
     }
 
 

@@ -31,8 +31,10 @@ class Account:
             raise ValueError("Account provider and account_id are required")
         if self.kind not in ACCOUNT_KINDS:
             raise ValueError("Invalid account kind")
-        if not self.account and not self.upi:
-            raise ValueError("An account or UPI is required")
+        if self.kind in {"bound_upi", "order_payee_upi"} and not self.upi:
+            raise ValueError("UPI account kinds require a UPI")
+        if self.kind in {"bank_account", "order_payee_bank"} and not self.account:
+            raise ValueError("Bank account kinds require an account")
         object.__setattr__(self, "attributes", _immutable_mapping(self.attributes))
 
 
@@ -82,6 +84,8 @@ class ProviderResult:
             raise ValueError("A successful provider result must be complete")
         if self.status != "success" and self.error is None:
             raise ValueError("A non-success provider result requires an error")
+        if self.status == "error" and self.accounts:
+            raise ValueError("An error provider result cannot contain accounts")
         if any(order.provider != self.provider for order in self.orders):
             raise ValueError("Provider result contains an order from another provider")
         if any(account.provider != self.provider for account in self.accounts):

@@ -196,3 +196,45 @@ class ReportBundleTests(TestCase):
             {"enabled": True},
         )
         self.assertNotIn(SENTINEL, bundle.aggregate_json.read_text(encoding="utf-8"))
+
+    def test_nested_account_credentials_are_not_serialized(self):
+        result = aggregate_fixture()
+        channel = result.channels[0]
+        account = Account(
+            "atgpay",
+            "bound_upi",
+            "upi-nested-credential-test",
+            upi="alice123@paytm",
+            attributes={
+                "details": {
+                    "sessionKey": SENTINEL,
+                    "accessToken": SENTINEL,
+                    "loginToken": SENTINEL,
+                    "refreshToken": SENTINEL,
+                    "cookieJar": SENTINEL,
+                    "assigned": "kept",
+                    "designated": "kept",
+                },
+                "items": [{"password": SENTINEL, "enabled": True}],
+            },
+        )
+        protected = ProviderResult.success(
+            channel.provider, channel.orders, channel.metadata, (account,)
+        )
+        protected_result = aggregate_results(
+            (protected,) + result.channels[1:], NOW, NOW
+        )
+
+        bundle = write_report_bundle(protected_result, self.directory)
+        attributes = json.loads(bundle.aggregate_json.read_text(encoding="utf-8"))["channels"][
+            "atgpay"
+        ]["accounts"][0]["attributes"]
+
+        self.assertEqual(
+            attributes,
+            {
+                "details": {"assigned": "kept", "designated": "kept"},
+                "items": [{"enabled": True}],
+            },
+        )
+        self.assertNotIn(SENTINEL, bundle.aggregate_json.read_text(encoding="utf-8"))

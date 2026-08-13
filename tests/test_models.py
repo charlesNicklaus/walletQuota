@@ -2,7 +2,13 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest import TestCase
 
-from walletquota.models import Account, AggregateResult, Order, ProviderResult
+from walletquota.models import (
+    Account,
+    AggregateResult,
+    Order,
+    ProviderError,
+    ProviderResult,
+)
 
 
 class OrderModelTests(TestCase):
@@ -46,6 +52,16 @@ class AccountModelTests(TestCase):
             Account("atgpay", "wallet", "safe-id", account="123456789012")
         with self.assertRaises(ValueError):
             Account("atgpay", "bound_upi", "safe-id")
+
+    def test_account_requires_identifier_that_matches_its_kind(self):
+        with self.assertRaises(ValueError):
+            Account("atgpay", "bound_upi", "safe-id", account="123456789012")
+        with self.assertRaises(ValueError):
+            Account("atgpay", "order_payee_upi", "safe-id", account="123456789012")
+        with self.assertRaises(ValueError):
+            Account("atgpay", "bank_account", "safe-id", upi="alice123@paytm")
+        with self.assertRaises(ValueError):
+            Account("atgpay", "order_payee_bank", "safe-id", upi="alice123@paytm")
 
     def test_account_attributes_are_immutable_copies(self):
         attributes = {"enabled": True}
@@ -101,6 +117,19 @@ class ProviderResultTests(TestCase):
         failure = ProviderResult.failure("atgpay", "api", "Request failed")
 
         self.assertEqual(failure.accounts, ())
+
+    def test_error_results_reject_accounts(self):
+        account = Account("atgpay", "bound_upi", "safe-id", upi="alice123@paytm")
+        with self.assertRaises(ValueError):
+            ProviderResult(
+                "atgpay",
+                "error",
+                (),
+                False,
+                {},
+                ProviderError("api", "Request failed"),
+                (account,),
+            )
 
 
 class AggregateResultTests(TestCase):

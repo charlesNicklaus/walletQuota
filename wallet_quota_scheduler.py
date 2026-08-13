@@ -44,6 +44,9 @@ def main(
     stdout: TextIO = sys.stdout,
     stderr: TextIO = sys.stderr,
 ) -> int:
+    if threading.current_thread() is not threading.main_thread():
+        print("Scheduler setup failed", file=stderr)
+        return 1
     args = build_parser().parse_args(argv)
     try:
         settings = AppSettings.load(args.env_file, output_dir=args.output_dir)

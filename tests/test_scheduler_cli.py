@@ -1,4 +1,5 @@
 import io
+import json
 import signal
 import tempfile
 from datetime import date, datetime
@@ -113,6 +114,25 @@ class SchedulerCliTests(TestCase):
         acquire.assert_not_called()
         self.assertEqual(stderr.getvalue(), "Scheduler setup failed\n")
 
+    def test_non_main_thread_fails_safely_before_configuration_or_lock(self):
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            wallet_quota_scheduler.threading, "current_thread", return_value=object()
+        ), mock.patch.object(
+            wallet_quota_scheduler.threading, "main_thread", return_value=object()
+        ), mock.patch.object(wallet_quota_scheduler.AppSettings, "load") as load, mock.patch.object(
+            wallet_quota_scheduler.SchedulerLock, "acquire"
+        ) as acquire:
+            result = wallet_quota_scheduler.main(
+                ["--env-file", str(self.env_file)], io.StringIO(), stderr
+            )
+
+        self.assertEqual(result, 1)
+        load.assert_not_called()
+        acquire.assert_not_called()
+        self.assertEqual(stderr.getvalue(), "Scheduler setup failed\n")
+
     def test_lock_conflict_is_safe(self):
         stderr = io.StringIO()
 
@@ -176,8 +196,40 @@ class SchedulerCliTests(TestCase):
         report_directory.mkdir()
         sentinel = self.root / "outside-sentinel"
         sentinel.write_text("keep", encoding="utf-8")
+        expired = report_directory / "20260811_080000"
+        expired.mkdir()
+        (expired / "aggregate.json").write_text(
+            json.dumps(
+                {
+                    "metadata": {
+                        "generator": "walletQuota",
+                        "schema_version": 1,
+                        "finished_at": "2026-08-11T08:00:00+05:30",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        current = report_directory / "20260812_080000"
+        current.mkdir()
+        (current / "aggregate.json").write_text(
+            json.dumps(
+                {
+                    "metadata": {
+                        "generator": "walletQuota",
+                        "schema_version": 1,
+                        "finished_at": "2026-08-12T08:00:00+05:30",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        unknown = report_directory / "unknown-child"
+        unknown.mkdir()
         settings = SimpleNamespace(report_directory=report_directory)
         query_calls = []
+        stdout = io.StringIO()
+        stderr = io.StringIO()
 
         class BoundedScheduler:
             def __init__(self, report_root, query, cleanup_callback, clock, **unused):
@@ -202,12 +254,22 @@ class SchedulerCliTests(TestCase):
 
         with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=settings), mock.patch.object(
             wallet_quota_scheduler.wallet_quota, "main", side_effect=lambda *args: query_calls.append(args) or 0
-        ), mock.patch.object(wallet_quota_scheduler, "cleanup_expired_reports", return_value=CleanupResult((), (), ())) as cleanup, mock.patch.object(
+        ), mock.patch.object(
             wallet_quota_scheduler, "StandaloneScheduler", BoundedScheduler
         ):
-            result = wallet_quota_scheduler.main(["--env-file", str(self.env_file)])
+            result = wallet_quota_scheduler.main(
+                ["--env-file", str(self.env_file)], stdout, stderr
+            )
 
         self.assertEqual(result, 0)
+        self.assertFalse(expired.exists())
         self.assertTrue(sentinel.is_file())
+        self.assertTrue(unknown.is_dir())
+        self.assertTrue(current.is_dir())
         self.assertEqual(len(query_calls), 2)
-        cleanup.assert_called_once_with(report_directory, date(2026, 8, 12))
+        self.assertEqual(
+            stdout.getvalue(),
+            "Report cleanup: deleted 1, preserved 2\n"
+            "Unrecognized report directory preserved\n",
+        )
+        self.assertEqual(stderr.getvalue(), "")

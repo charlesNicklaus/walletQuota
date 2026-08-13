@@ -142,3 +142,17 @@ class ReportRetentionTests(TestCase):
         self.assertEqual(result.deleted, ())
         self.assertIn(report, result.preserved)
         self.assertIn("Unrecognized report directory preserved", result.warnings)
+
+    def test_preserves_legacy_export_with_nested_raw_auth_response(self):
+        payload = legacy_payload("2026-08-11T08:00:00+05:30")
+        payload["channels"]["example"]["metadata"] = {
+            "safe": True,
+            "details": {"rawAuthResponse": {"token": "not safe to trust"}},
+        }
+        report = self.snapshot("20260811_150000", payload)
+
+        result = cleanup_expired_reports(self.root, TODAY)
+
+        self.assertEqual(result.deleted, ())
+        self.assertIn(report, result.preserved)
+        self.assertIn("Unrecognized report directory preserved", result.warnings)

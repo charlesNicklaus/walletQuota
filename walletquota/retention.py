@@ -22,6 +22,9 @@ _LEGACY_CHANNEL_KEYS = frozenset(
 )
 _UNRECOGNIZED_WARNING = "Unrecognized report directory preserved"
 _DELETE_WARNING = "Report directory could not be deleted"
+_LEGACY_CREDENTIAL_KEYS = frozenset(
+    {"apikey", "authorization", "credential", "authheader"}
+)
 
 
 @dataclass(frozen=True)
@@ -47,12 +50,18 @@ def _finished_at(metadata: Mapping[str, Any]) -> Optional[datetime]:
 def _contains_credential_key(value: Any) -> bool:
     if isinstance(value, Mapping):
         return any(
-            _is_credential_attribute(key) or _contains_credential_key(item)
+            _is_credential_attribute(key)
+            or _normalized_legacy_credential_key(key)
+            or _contains_credential_key(item)
             for key, item in value.items()
         )
     if isinstance(value, (list, tuple)):
         return any(_contains_credential_key(item) for item in value)
     return False
+
+
+def _normalized_legacy_credential_key(key: Any) -> bool:
+    return str(key).replace("_", "").replace("-", "").lower() in _LEGACY_CREDENTIAL_KEYS
 
 
 def _is_legacy_report(payload: Any, metadata: Mapping[str, Any]) -> bool:
@@ -81,7 +90,7 @@ def _finished_report_date(path: Path) -> Optional[date]:
     try:
         with aggregate_json.open(encoding="utf-8") as handle:
             payload = json.load(handle)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
     if not isinstance(payload, Mapping):
         return None

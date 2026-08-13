@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _log_cleanup(result: CleanupResult, stdout: TextIO) -> None:
+def _log_cleanup(result: CleanupResult, stdout: TextIO, stderr: TextIO) -> None:
     print(
         "Report cleanup: deleted {}, preserved {}".format(
             len(result.deleted), len(result.preserved)
@@ -36,7 +36,7 @@ def _log_cleanup(result: CleanupResult, stdout: TextIO) -> None:
         file=stdout,
     )
     for warning in result.warnings:
-        print(warning, file=stdout)
+        print(warning, file=stderr)
 
 
 def main(
@@ -65,7 +65,7 @@ def main(
 
     def cleanup(today):
         result = cleanup_expired_reports(settings.report_directory, today)
-        _log_cleanup(result, stdout)
+        _log_cleanup(result, stdout, stderr)
         return result
 
     previous_handler = None

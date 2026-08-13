@@ -57,6 +57,27 @@ class SchedulerLockTests(TestCase):
 
         self.assertTrue(expected.is_file())
 
+    def test_absolute_relative_and_symlink_aliases_contend_for_one_lock(self):
+        root = Path(self.temporary.name)
+        reports = root / "reports"
+        reports.mkdir()
+        alias = root / "reports-alias"
+        alias.symlink_to(reports, target_is_directory=True)
+        relative = Path(self.temporary.name) / "nested" / ".." / "reports"
+
+        first = SchedulerLock.acquire(relative)
+        self.addCleanup(first.release)
+
+        with self.assertRaises(SchedulerAlreadyRunning):
+            SchedulerLock.acquire(reports.resolve())
+        with self.assertRaises(SchedulerAlreadyRunning):
+            SchedulerLock.acquire(alias)
+
+        self.assertEqual(
+            first.path,
+            reports.resolve().parent / ".reports.wallet_quota_scheduler.lock",
+        )
+
 
 class StandaloneSchedulerTests(TestCase):
     def scheduler(self, times, wait_results, query_results):
@@ -182,3 +203,79 @@ class StandaloneSchedulerTests(TestCase):
         self.assertEqual(events, ["cleanup", "query", "query"])
         self.assertEqual(scheduler.query_exit_codes, (0,))
         self.assertEqual(stderr.getvalue(), "Scheduled query failed\n")
+
+    def test_operational_messages_are_fixed_and_use_separate_streams(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        scheduler = StandaloneScheduler(
+            Path("unused-reports"),
+            lambda: 0,
+            lambda today: None,
+            lambda times=iter((ist(12, 12, 0), ist(12, 12, 1))): next(times),
+            lambda target: False,
+            stdout,
+            stderr,
+        )
+
+        scheduler.run()
+
+        self.assertEqual(
+            stdout.getvalue(),
+            "Scheduler started\nNext scheduled run: 2026-08-12 12:20 IST\n",
+        )
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_startup_cleanup_failure_queries_and_retries_on_the_same_date(self):
+        events = []
+        stderr = io.StringIO()
+        cleanup_calls = 0
+        scheduler = StandaloneScheduler(
+            Path("unused-reports"),
+            lambda: events.append("query") or 0,
+            lambda today: None,
+            lambda times=iter((ist(12, 12, 0), ist(12, 12, 1), ist(12, 12, 20), ist(12, 12, 21))): next(times),
+            lambda target, results=iter((True, False)): next(results),
+            io.StringIO(),
+            stderr,
+        )
+
+        def cleanup(today):
+            nonlocal cleanup_calls
+            cleanup_calls += 1
+            events.append(("cleanup", today))
+            if cleanup_calls == 1:
+                raise RuntimeError("secret")
+
+        scheduler.cleanup = cleanup
+        scheduler.run()
+
+        self.assertEqual(cleanup_calls, 2)
+        self.assertEqual(events, [("cleanup", ist(12, 0, 0).date()), "query", ("cleanup", ist(12, 0, 0).date()), "query"])
+        self.assertEqual(stderr.getvalue(), "Scheduled cleanup failed\n")
+
+    def test_rollover_cleanup_failure_queries_and_retries_on_next_cycle(self):
+        events = []
+        stderr = io.StringIO()
+        cleanup_calls = []
+
+        def cleanup(today):
+            cleanup_calls.append(today)
+            events.append(("cleanup", today))
+            if today == ist(13, 0, 0).date() and cleanup_calls.count(today) == 1:
+                raise RuntimeError("secret")
+
+        scheduler = StandaloneScheduler(
+            Path("unused-reports"),
+            lambda: events.append("query") or 0,
+            cleanup,
+            lambda times=iter((ist(12, 23, 40), ist(12, 23, 41), ist(13, 0, 0), ist(13, 0, 1), ist(13, 0, 20), ist(13, 0, 21))): next(times),
+            lambda target, results=iter((True, True, False)): next(results),
+            io.StringIO(),
+            stderr,
+        )
+
+        scheduler.run()
+
+        self.assertEqual(cleanup_calls, [ist(12, 0, 0).date(), ist(13, 0, 0).date(), ist(13, 0, 0).date()])
+        self.assertEqual(events, [("cleanup", ist(12, 0, 0).date()), "query", ("cleanup", ist(13, 0, 0).date()), "query", ("cleanup", ist(13, 0, 0).date()), "query"])
+        self.assertEqual(stderr.getvalue(), "Scheduled cleanup failed\n")

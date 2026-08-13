@@ -119,6 +119,17 @@ class ReportRetentionTests(TestCase):
         self.assertTrue(external_report.is_dir())
         self.assertIn("Unrecognized report directory preserved", result.warnings)
 
+    def test_preserves_invalid_utf8_aggregate_json_with_a_safe_warning(self):
+        report = self.root / "20260811_125000"
+        report.mkdir()
+        (report / "aggregate.json").write_bytes(b"\xff")
+
+        result = cleanup_expired_reports(self.root, TODAY)
+
+        self.assertEqual(result.deleted, ())
+        self.assertIn(report, result.preserved)
+        self.assertEqual(result.warnings, ("Unrecognized report directory preserved",))
+
     def test_does_not_scan_below_an_unknown_direct_child(self):
         unknown = self.root / "other"
         nested = self.snapshot("other/20260811_130000", marked_payload("2026-08-11T08:00:00+05:30"))
@@ -156,3 +167,21 @@ class ReportRetentionTests(TestCase):
         self.assertEqual(result.deleted, ())
         self.assertIn(report, result.preserved)
         self.assertIn("Unrecognized report directory preserved", result.warnings)
+
+    def test_preserves_legacy_export_with_nested_authentication_keys(self):
+        for index, key in enumerate(
+            ("apiKey", "authorization", "credential", "authHeader"), start=16
+        ):
+            with self.subTest(key=key):
+                payload = legacy_payload("2026-08-11T08:00:00+05:30")
+                payload["channels"]["example"]["metadata"] = {
+                    "safe": True,
+                    "details": {key: {"status": "received"}},
+                }
+                report = self.snapshot("20260811_{}0000".format(index), payload)
+
+                result = cleanup_expired_reports(self.root, TODAY)
+
+                self.assertEqual(result.deleted, ())
+                self.assertIn(report, result.preserved)
+                self.assertIn("Unrecognized report directory preserved", result.warnings)

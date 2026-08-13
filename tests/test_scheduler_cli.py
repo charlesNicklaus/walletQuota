@@ -81,14 +81,13 @@ class SchedulerCliTests(TestCase):
 
     def test_cleanup_logging_omits_paths_and_prints_fixed_warnings(self):
         stdout = io.StringIO()
+        stderr = io.StringIO()
         result = CleanupResult((), (), ("Unrecognized report directory preserved",))
 
-        wallet_quota_scheduler._log_cleanup(result, stdout)
+        wallet_quota_scheduler._log_cleanup(result, stdout, stderr)
 
-        self.assertEqual(
-            stdout.getvalue(),
-            "Report cleanup: deleted 0, preserved 0\nUnrecognized report directory preserved\n",
-        )
+        self.assertEqual(stdout.getvalue(), "Report cleanup: deleted 0, preserved 0\n")
+        self.assertEqual(stderr.getvalue(), "Unrecognized report directory preserved\n")
 
     def test_configuration_failure_is_safe_and_happens_before_lock(self):
         stderr = io.StringIO()
@@ -247,6 +246,8 @@ class SchedulerCliTests(TestCase):
                     cleanup_callback,
                     lambda: next(times),
                     lambda target, results=iter((True, False)): next(results),
+                    stdout=unused["stdout"],
+                    stderr=unused["stderr"],
                 )
 
             def run(self):
@@ -269,7 +270,9 @@ class SchedulerCliTests(TestCase):
         self.assertEqual(len(query_calls), 2)
         self.assertEqual(
             stdout.getvalue(),
+            "Scheduler started\n"
             "Report cleanup: deleted 1, preserved 2\n"
-            "Unrecognized report directory preserved\n",
+            "Next scheduled run: 2026-08-12 12:20 IST\n"
+            "Next scheduled run: 2026-08-12 12:40 IST\n",
         )
-        self.assertEqual(stderr.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "Unrecognized report directory preserved\n")

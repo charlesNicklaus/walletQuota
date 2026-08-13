@@ -147,7 +147,7 @@ class ReportRetentionTests(TestCase):
         payload = legacy_payload("2026-08-11T08:00:00+05:30")
         payload["channels"]["example"]["metadata"] = {
             "safe": True,
-            "details": {"rawAuthResponse": {"token": "not safe to trust"}},
+            "details": {"rawAuthResponse": {"status": "received"}},
         }
         report = self.snapshot("20260811_150000", payload)
 

@@ -103,6 +103,8 @@ class ReportBundleTests(TestCase):
 
         payload = json.loads(bundle.aggregate_json.read_text(encoding="utf-8"))
         self.assertEqual(set(payload), {"metadata", "total", "channels"})
+        self.assertEqual(payload["metadata"]["generator"], "walletQuota")
+        self.assertEqual(payload["metadata"]["schema_version"], 1)
         self.assertEqual(list(payload["channels"]), ["atgpay", "xxxpay", "badpay"])
         self.assertEqual(payload["total"]["order_count"], 2)
         self.assertEqual(payload["total"]["order_amount"], "1052")

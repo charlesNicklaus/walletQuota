@@ -276,6 +276,8 @@ def write_report_bundle(result: AggregateResult, directory: Path) -> ReportBundl
 
     payload = {
         "metadata": {
+            "generator": "walletQuota",
+            "schema_version": 1,
             "status": result.status,
             "started_at": result.started_at.isoformat(),
             "finished_at": result.finished_at.isoformat(),

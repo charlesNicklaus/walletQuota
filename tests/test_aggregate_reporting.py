@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import TestCase
 
 from walletquota.aggregate import aggregate_results
-from walletquota.models import Order, ProviderResult
+from walletquota.models import Account, Order, ProviderResult
 from walletquota.reporting import format_terminal_report, write_report_bundle
 
 
@@ -30,6 +30,23 @@ def aggregate_fixture():
             Order("atgpay", "AP2", Decimal("530")),
         ),
         {"pages_fetched": 1, "stable": True},
+        (
+            Account(
+                "atgpay",
+                "bound_upi",
+                "upi-1",
+                upi="alice123@paytm",
+                attributes={"enabled": True},
+            ),
+            Account(
+                "atgpay",
+                "bank_account",
+                "bank-1",
+                account="123456789012",
+                bank_name="HDFC",
+                ifsc="HDFC0000123",
+            ),
+        ),
     )
     partial = ProviderResult.partial(
         "xxxpay",
@@ -59,6 +76,14 @@ class TerminalReportTests(TestCase):
         self.assertIn("订单数: 1（不计入 total）", report)
         self.assertIn("错误: authentication / Authentication failed", report)
 
+    def test_masks_account_identifiers_but_keeps_distinguishable_forms(self):
+        report = format_terminal_report(aggregate_fixture())
+
+        self.assertNotIn("alice123@paytm", report)
+        self.assertNotIn("123456789012", report)
+        self.assertIn("a***3@p***m", report)
+        self.assertIn("****9012 / HDFC / IFSC ****0123", report)
+
 
 class ReportBundleTests(TestCase):
     def setUp(self):
@@ -83,12 +108,46 @@ class ReportBundleTests(TestCase):
         self.assertEqual(payload["total"]["order_amount"], "1052")
         self.assertEqual(payload["channels"]["xxxpay"]["status"], "partial")
         self.assertEqual(payload["channels"]["badpay"]["orders"], [])
+        self.assertEqual(
+            payload["channels"]["atgpay"]["account_summary"],
+            {"count": 2, "by_kind": {"bound_upi": 1, "bank_account": 1}},
+        )
+        self.assertEqual(
+            payload["channels"]["atgpay"]["accounts"],
+            [
+                {
+                    "provider": "atgpay",
+                    "kind": "bound_upi",
+                    "account_id": "upi-1",
+                    "account": None,
+                    "upi": "alice123@paytm",
+                    "bank_name": None,
+                    "ifsc": None,
+                    "order_id": None,
+                    "attributes": {"enabled": True},
+                },
+                {
+                    "provider": "atgpay",
+                    "kind": "bank_account",
+                    "account_id": "bank-1",
+                    "account": "123456789012",
+                    "upi": None,
+                    "bank_name": "HDFC",
+                    "ifsc": "HDFC0000123",
+                    "order_id": None,
+                    "attributes": {},
+                },
+            ],
+        )
 
         with bundle.channel_csv["atgpay"].open(encoding="utf-8", newline="") as handle:
             rows = list(csv.DictReader(handle))
         self.assertEqual([row["order_id"] for row in rows], ["AP1", "AP2"])
         self.assertEqual(rows[0]["amount"], "522")
         self.assertEqual(json.loads(rows[0]["attributes"]), {"rate": "3", "vip": 0})
+        csv_text = bundle.channel_csv["atgpay"].read_text(encoding="utf-8")
+        self.assertNotIn("alice123@paytm", csv_text)
+        self.assertNotIn("123456789012", csv_text)
 
     def test_same_timestamp_uses_numbered_directory_without_overwrite(self):
         first = write_report_bundle(aggregate_fixture(), self.directory)
@@ -107,3 +166,33 @@ class ReportBundleTests(TestCase):
             self.assertNotIn(SENTINEL, path.read_text(encoding="utf-8"))
             self.assertNotIn("sessionKey", path.read_text(encoding="utf-8"))
             self.assertNotIn("loginToken", path.read_text(encoding="utf-8"))
+
+    def test_account_credentials_are_not_serialized(self):
+        result = aggregate_fixture()
+        channel = result.channels[0]
+        account = Account(
+            "atgpay",
+            "bound_upi",
+            "upi-credential-test",
+            upi="alice123@paytm",
+            attributes={
+                "enabled": True,
+                "sessionKey": SENTINEL,
+                "accessToken": SENTINEL,
+            },
+        )
+        protected = ProviderResult.success(
+            channel.provider, channel.orders, channel.metadata, (account,)
+        )
+        protected_result = aggregate_results(
+            (protected,) + result.channels[1:], NOW, NOW
+        )
+
+        bundle = write_report_bundle(protected_result, self.directory)
+        payload = json.loads(bundle.aggregate_json.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            payload["channels"]["atgpay"]["accounts"][0]["attributes"],
+            {"enabled": True},
+        )
+        self.assertNotIn(SENTINEL, bundle.aggregate_json.read_text(encoding="utf-8"))

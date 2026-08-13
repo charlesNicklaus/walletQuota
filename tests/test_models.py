@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest import TestCase
 
-from walletquota.models import AggregateResult, Order, ProviderResult
+from walletquota.models import Account, AggregateResult, Order, ProviderResult
 
 
 class OrderModelTests(TestCase):
@@ -28,6 +28,35 @@ class OrderModelTests(TestCase):
         self.assertEqual(order.attributes["vip"], 0)
         with self.assertRaises(TypeError):
             order.attributes["vip"] = 2
+
+
+class AccountModelTests(TestCase):
+    def test_account_accepts_supported_kinds_with_an_account_or_upi(self):
+        for kind, account, upi in (
+            ("bound_upi", None, "alice123@paytm"),
+            ("bank_account", "123456789012", None),
+            ("order_payee_upi", None, "bob@example"),
+            ("order_payee_bank", "987654321098", None),
+        ):
+            value = Account("atgpay", kind, "safe-id", account=account, upi=upi)
+            self.assertEqual(value.kind, kind)
+
+    def test_account_rejects_unsupported_kind_or_missing_identifier(self):
+        with self.assertRaises(ValueError):
+            Account("atgpay", "wallet", "safe-id", account="123456789012")
+        with self.assertRaises(ValueError):
+            Account("atgpay", "bound_upi", "safe-id")
+
+    def test_account_attributes_are_immutable_copies(self):
+        attributes = {"enabled": True}
+        account = Account(
+            "atgpay", "bound_upi", "safe-id", upi="alice123@paytm", attributes=attributes
+        )
+        attributes["enabled"] = False
+
+        self.assertTrue(account.attributes["enabled"])
+        with self.assertRaises(TypeError):
+            account.attributes["enabled"] = False
 
 
 class ProviderResultTests(TestCase):
@@ -62,6 +91,16 @@ class ProviderResultTests(TestCase):
         order = Order("xxxpay", "A1", Decimal("10"))
         with self.assertRaises(ValueError):
             ProviderResult.success("atgpay", (order,), {})
+
+    def test_result_rejects_accounts_from_another_provider(self):
+        account = Account("xxxpay", "bound_upi", "safe-id", upi="alice123@paytm")
+        with self.assertRaises(ValueError):
+            ProviderResult.success("atgpay", (), {}, (account,))
+
+    def test_failure_results_have_empty_accounts(self):
+        failure = ProviderResult.failure("atgpay", "api", "Request failed")
+
+        self.assertEqual(failure.accounts, ())
 
 
 class AggregateResultTests(TestCase):

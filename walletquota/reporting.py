@@ -8,7 +8,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional
 
-from .models import AggregateResult, Order, ProviderResult
+from .models import Account, AggregateResult, Order, ProviderResult
 from .summary import summarize_orders
 
 
@@ -21,6 +21,15 @@ CSV_FIELDS = [
     "balance",
     "attributes",
 ]
+
+_CREDENTIAL_ATTRIBUTE_FRAGMENTS = (
+    "password",
+    "token",
+    "cookie",
+    "session",
+    "signature",
+    "sign",
+)
 
 
 def _decimal_text(value: Optional[Decimal]) -> str:
@@ -42,6 +51,46 @@ def _distribution_lines(summary: Mapping[str, Any]):
             _decimal_text(row["subtotal"]),
         )
         for row in rows
+    ]
+
+
+def _mask_number(value: str) -> str:
+    return "****{}".format(value[-4:]) if len(value) > 4 else "*" * len(value)
+
+
+def _mask_upi(value: str) -> str:
+    local, separator, handle = value.partition("@")
+    if not separator:
+        return _mask_number(value)
+
+    def mask_part(part: str) -> str:
+        if len(part) < 3:
+            return "*" * len(part)
+        return "{}***{}".format(part[0], part[-1])
+
+    return "{}@{}".format(mask_part(local), mask_part(handle))
+
+
+def _account_line(account: Account) -> str:
+    if account.kind == "bound_upi":
+        return "    收款 UPI: {}".format(_mask_upi(account.upi))
+    if account.kind == "bank_account":
+        line = "    银行账户: {}".format(_mask_number(account.account))
+        if account.bank_name:
+            line += " / {}".format(account.bank_name)
+        if account.ifsc:
+            line += " / IFSC {}".format(_mask_number(account.ifsc))
+        return line
+
+    value = _mask_upi(account.upi) if account.upi else _mask_number(account.account)
+    return "    订单收款方: {} / {}".format(account.order_id or "—", value)
+
+
+def _account_lines(accounts):
+    if not accounts:
+        return ["  账户: 0（当前账号未返回已绑定或已领取订单账户）"]
+    return ["  账户: {}".format(len(accounts))] + [
+        _account_line(account) for account in accounts
     ]
 
 
@@ -82,6 +131,7 @@ def format_terminal_report(result: AggregateResult) -> str:
             ]
         )
         lines.extend(_distribution_lines(summary))
+        lines.extend(_account_lines(channel.accounts))
         if channel.status == "partial":
             lines.append("  警告: {}".format(channel.error.message))
     return "\n".join(lines)
@@ -95,6 +145,36 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
     return value
+
+
+def _account_dict(account: Account) -> Dict[str, Any]:
+    return {
+        "provider": account.provider,
+        "kind": account.kind,
+        "account_id": account.account_id,
+        "account": account.account,
+        "upi": account.upi,
+        "bank_name": account.bank_name,
+        "ifsc": account.ifsc,
+        "order_id": account.order_id,
+        "attributes": _json_value(
+            {
+                key: value
+                for key, value in account.attributes.items()
+                if not any(
+                    fragment in str(key).replace("_", "").lower()
+                    for fragment in _CREDENTIAL_ATTRIBUTE_FRAGMENTS
+                )
+            }
+        ),
+    }
+
+
+def _account_summary(accounts) -> Dict[str, Any]:
+    by_kind: Dict[str, int] = {}
+    for account in accounts:
+        by_kind[account.kind] = by_kind.get(account.kind, 0) + 1
+    return {"count": len(accounts), "by_kind": by_kind}
 
 
 def _order_dict(order: Order) -> Dict[str, Any]:
@@ -116,6 +196,8 @@ def _channel_dict(result: ProviderResult) -> Dict[str, Any]:
         "summary": _json_value(summarize_orders(result.orders)),
         "metadata": _json_value(result.metadata),
         "orders": [_order_dict(order) for order in result.orders],
+        "account_summary": _account_summary(result.accounts),
+        "accounts": [_account_dict(account) for account in result.accounts],
     }
     if result.error is not None:
         value["error"] = {

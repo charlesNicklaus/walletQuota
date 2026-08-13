@@ -9,6 +9,33 @@ def _immutable_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
     return MappingProxyType(dict(value))
 
 
+ACCOUNT_KINDS = frozenset(
+    {"bound_upi", "bank_account", "order_payee_upi", "order_payee_bank"}
+)
+
+
+@dataclass(frozen=True)
+class Account:
+    provider: str
+    kind: str
+    account_id: str
+    account: Optional[str] = None
+    upi: Optional[str] = None
+    bank_name: Optional[str] = None
+    ifsc: Optional[str] = None
+    order_id: Optional[str] = None
+    attributes: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.provider or not self.account_id:
+            raise ValueError("Account provider and account_id are required")
+        if self.kind not in ACCOUNT_KINDS:
+            raise ValueError("Invalid account kind")
+        if not self.account and not self.upi:
+            raise ValueError("An account or UPI is required")
+        object.__setattr__(self, "attributes", _immutable_mapping(self.attributes))
+
+
 @dataclass(frozen=True)
 class Order:
     provider: str
@@ -44,6 +71,7 @@ class ProviderResult:
     complete: bool
     metadata: Mapping[str, Any]
     error: Optional[ProviderError] = None
+    accounts: Tuple[Account, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.provider:
@@ -56,7 +84,10 @@ class ProviderResult:
             raise ValueError("A non-success provider result requires an error")
         if any(order.provider != self.provider for order in self.orders):
             raise ValueError("Provider result contains an order from another provider")
+        if any(account.provider != self.provider for account in self.accounts):
+            raise ValueError("Provider result contains an account from another provider")
         object.__setattr__(self, "orders", tuple(self.orders))
+        object.__setattr__(self, "accounts", tuple(self.accounts))
         object.__setattr__(self, "metadata", _immutable_mapping(self.metadata))
 
     @classmethod
@@ -65,8 +96,9 @@ class ProviderResult:
         provider: str,
         orders: Tuple[Order, ...],
         metadata: Mapping[str, Any],
+        accounts: Tuple[Account, ...] = (),
     ) -> "ProviderResult":
-        return cls(provider, "success", tuple(orders), True, metadata)
+        return cls(provider, "success", tuple(orders), True, metadata, None, accounts)
 
     @classmethod
     def partial(
@@ -75,6 +107,7 @@ class ProviderResult:
         orders: Tuple[Order, ...],
         metadata: Mapping[str, Any],
         message: str,
+        accounts: Tuple[Account, ...] = (),
     ) -> "ProviderResult":
         return cls(
             provider,
@@ -83,6 +116,7 @@ class ProviderResult:
             False,
             metadata,
             ProviderError("incomplete", message),
+            accounts,
         )
 
     @classmethod

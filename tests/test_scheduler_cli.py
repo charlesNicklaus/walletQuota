@@ -114,6 +114,36 @@ class SchedulerCliTests(TestCase):
         acquire.assert_not_called()
         self.assertEqual(stderr.getvalue(), "Scheduler setup failed\n")
 
+    def test_report_root_resolution_failure_is_safe_before_lock_or_query(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        class FailingRoot:
+            def __init__(self, error):
+                self.error = error
+
+            def resolve(self):
+                raise self.error
+
+        for error in (OSError("secret path"), RuntimeError("secret path")):
+            with self.subTest(error=type(error).__name__), mock.patch.object(
+                wallet_quota_scheduler.AppSettings,
+                "load",
+                return_value=SimpleNamespace(report_directory=FailingRoot(error)),
+            ), mock.patch.object(wallet_quota_scheduler.SchedulerLock, "acquire") as acquire, mock.patch.object(
+                wallet_quota_scheduler.wallet_quota, "main"
+            ) as query:
+                result = wallet_quota_scheduler.main(
+                    ["--env-file", str(self.env_file)], stdout, stderr
+                )
+
+            self.assertEqual(result, 1)
+            acquire.assert_not_called()
+            query.assert_not_called()
+
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "Scheduler setup failed\nScheduler setup failed\n")
+
     def test_non_main_thread_fails_safely_before_configuration_or_lock(self):
         stderr = io.StringIO()
 

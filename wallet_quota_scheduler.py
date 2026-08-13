@@ -57,7 +57,11 @@ def main(
         print("Scheduler setup failed", file=stderr)
         return 1
 
-    report_directory = settings.report_directory.resolve()
+    try:
+        report_directory = settings.report_directory.resolve()
+    except (OSError, RuntimeError):
+        print("Scheduler setup failed", file=stderr)
+        return 1
     query_args = [
         "--env-file",
         str(args.env_file),

@@ -24,7 +24,20 @@ class AccountSnapshot:
 
 
 def _text(value: Any) -> str:
-    return str(value).strip() if value is not None else ""
+    if value is None or isinstance(value, (Mapping, list, tuple, set)):
+        return ""
+    return str(value).strip()
+
+
+def _safe_attribute(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return None
+
+
+def _warn_once(warnings: List[str], message: str) -> None:
+    if message not in warnings:
+        warnings.append(message)
 
 
 def _server_or_derived_id(
@@ -67,9 +80,9 @@ def _bound_upi_accounts(data: Any) -> Tuple[List[Account], int]:
             continue
         account = _text(row.get("account"))
         attributes = {
-            name: row[name]
+            name: _safe_attribute(row[name])
             for name in ("type", "sale", "status")
-            if name in row
+            if name in row and _safe_attribute(row[name]) is not None
         }
         accounts.append(
             Account(
@@ -120,7 +133,9 @@ def _order_detail_accounts(order_id: str, data: Any) -> List[Account]:
             Account(
                 "atgpay",
                 "order_payee_upi",
-                _server_or_derived_id(data, "order_payee_upi", upi=upi, order_id=order_id),
+                _server_or_derived_id(
+                    {}, "order_payee_upi", upi=upi, order_id=order_id
+                ),
                 upi=upi,
                 order_id=order_id,
                 attributes=attributes,
@@ -132,7 +147,7 @@ def _order_detail_accounts(order_id: str, data: Any) -> List[Account]:
                 "atgpay",
                 "order_payee_bank",
                 _server_or_derived_id(
-                    data, "order_payee_bank", account=number, order_id=order_id
+                    {}, "order_payee_bank", account=number, order_id=order_id
                 ),
                 account=number,
                 bank_name=_text(data.get("bankName")) or None,
@@ -164,24 +179,37 @@ def _claimed_order_ids(client: Any, page_size: int, warnings: List[str]) -> Tupl
             total = _total(data)
             rows = _rows(data, "list")
         except Exception:
-            warnings.append("ATG claimed task collection failed")
+            _warn_once(warnings, "ATG claimed task collection failed")
             break
         if expected_total is None:
             expected_total = total
         elif total != expected_total:
-            warnings.append("ATG claimed task pagination is inconsistent")
+            _warn_once(warnings, "ATG claimed task pagination is inconsistent")
             break
+        page_order_ids = []
         for row in rows:
             order_id = _text(row.get("orderNo"))
             if order_id:
-                order_ids.append(order_id)
-        if len(order_ids) >= total:
+                page_order_ids.append(order_id)
+        if (
+            len(page_order_ids) != len(rows)
+            or len(set(page_order_ids)) != len(page_order_ids)
+            or any(order_id in order_ids for order_id in page_order_ids)
+            or len(order_ids) + len(page_order_ids) > total
+        ):
+            for order_id in page_order_ids:
+                if order_id not in order_ids:
+                    order_ids.append(order_id)
+            _warn_once(warnings, "ATG claimed task pagination is inconsistent")
+            break
+        order_ids.extend(page_order_ids)
+        if len(order_ids) == total:
             break
         if not rows:
-            warnings.append("ATG claimed task pagination is inconsistent")
+            _warn_once(warnings, "ATG claimed task pagination is inconsistent")
             break
     else:
-        warnings.append("ATG claimed task page limit reached")
+        _warn_once(warnings, "ATG claimed task page limit reached")
     return order_ids, expected_total if expected_total is not None else 0
 
 
@@ -197,12 +225,12 @@ def collect_accounts(client: Any, task_page_size: int = _DEFAULT_TASK_PAGE_SIZE)
         bound_accounts, bound_upi_total = _bound_upi_accounts(client.fetch_bound_upis(1))
         collected.extend(bound_accounts)
     except Exception:
-        warnings.append("ATG bound UPI account collection failed")
+        _warn_once(warnings, "ATG bound UPI account collection failed")
     try:
         bank_accounts, bank_card_total = _bank_card_accounts(client.fetch_bank_cards())
         collected.extend(bank_accounts)
     except Exception:
-        warnings.append("ATG bank card account collection failed")
+        _warn_once(warnings, "ATG bank card account collection failed")
 
     order_ids, claimed_task_total = _claimed_order_ids(client, task_page_size, warnings)
     seen_order_ids = set()
@@ -213,7 +241,7 @@ def collect_accounts(client: Any, task_page_size: int = _DEFAULT_TASK_PAGE_SIZE)
         try:
             collected.extend(_order_detail_accounts(order_id, client.fetch_order_detail(order_id)))
         except Exception:
-            warnings.append("ATG claimed order detail collection failed")
+            _warn_once(warnings, "ATG claimed order detail collection failed")
 
     return AccountSnapshot(
         _deduplicate(collected),

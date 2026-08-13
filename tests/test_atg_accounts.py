@@ -72,7 +72,11 @@ class AccountCollectionTests(TestCase):
                 2: {"total": 2, "list": [{"orderNo": "ORD-2"}]},
             },
             details={
-                "ORD-1": {"toUpi": "payee@upi", "ignored": "secret"},
+                "ORD-1": {
+                    "id": "detail-id-must-be-ignored",
+                    "toUpi": "payee@upi",
+                    "ignored": "secret",
+                },
                 "ORD-2": {
                     "cardNumber": "999900001111",
                     "bankName": "ICICI",
@@ -114,6 +118,26 @@ class AccountCollectionTests(TestCase):
         self.assertEqual(payee_bank.account, "999900001111")
         self.assertEqual(payee_bank.order_id, "ORD-2")
         self.assertEqual(payee_bank.attributes, {"account_name": "Payee B"})
+
+    def test_rejects_nested_values_in_allowlisted_scalar_fields(self):
+        client = FakeClient(
+            bound={
+                "bindUpiList": [
+                    {"upi": {"sessionKey": "must-not-leak"}},
+                    {"upi": "safe@upi", "status": {"token": "must-not-leak"}},
+                ]
+            },
+            cards={"list": [{"cardNumber": {"password": "must-not-leak"}}]},
+            task_pages={1: {"total": 1, "list": [{"orderNo": "ORD-1"}]}},
+            details={"ORD-1": {"toUpi": {"cookie": "must-not-leak"}}},
+        )
+
+        snapshot = collect_accounts(client)
+
+        self.assertEqual(len(snapshot.accounts), 1)
+        self.assertEqual(snapshot.accounts[0].upi, "safe@upi")
+        self.assertEqual(snapshot.accounts[0].attributes, {})
+        self.assertNotIn("must-not-leak", repr(snapshot))
 
     def test_deduplicates_rows_and_uses_stable_derived_ids_when_server_ids_are_absent(self):
         client = FakeClient(
@@ -175,6 +199,50 @@ class AccountCollectionTests(TestCase):
         self.assertEqual(client.detail_calls, ["ORD-1"])
         self.assertEqual(snapshot.claimed_task_total, 2)
         self.assertEqual(snapshot.warnings, ("ATG claimed task pagination is inconsistent",))
+
+    def test_duplicate_claimed_order_ids_are_reported_as_inconsistent(self):
+        client = FakeClient(
+            bound={"bindUpiList": []},
+            cards={"list": []},
+            task_pages={
+                1: {
+                    "total": 2,
+                    "list": [{"orderNo": "ORD-1"}, {"orderNo": "ORD-1"}],
+                }
+            },
+            details={"ORD-1": {"toUpi": "payee@upi"}},
+        )
+
+        snapshot = collect_accounts(client)
+
+        self.assertEqual(client.detail_calls, ["ORD-1"])
+        self.assertEqual(
+            snapshot.warnings,
+            ("ATG claimed task pagination is inconsistent",),
+        )
+
+    def test_repeated_detail_failures_add_one_warning(self):
+        client = FakeClient(
+            bound={"bindUpiList": []},
+            cards={"list": []},
+            task_pages={
+                1: {
+                    "total": 2,
+                    "list": [{"orderNo": "ORD-1"}, {"orderNo": "ORD-2"}],
+                }
+            },
+            details={
+                "ORD-1": RuntimeError("first secret"),
+                "ORD-2": RuntimeError("second secret"),
+            },
+        )
+
+        snapshot = collect_accounts(client)
+
+        self.assertEqual(
+            snapshot.warnings,
+            ("ATG claimed order detail collection failed",),
+        )
 
     def test_enrichment_failures_return_only_fixed_safe_warnings(self):
         client = FakeClient(

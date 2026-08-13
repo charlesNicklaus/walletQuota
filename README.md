@@ -75,6 +75,23 @@ python3 wallet_quota.py --verbose
 python3 wallet_quota.py --env-file private.env --output-dir snapshots
 ```
 
+### 独立定时运行
+
+前台定时器会立刻执行一次，并随后在 IST 每小时的 `:00`、`:20`、`:40` 运行：
+
+```bash
+python3 wallet_quota_scheduler.py --verbose
+# 使用 Ctrl+C 停止
+```
+
+也可以随时手动执行一次查询：
+
+```bash
+python3 wallet_quota.py --verbose
+```
+
+定时器不会补跑错过的时间点，也不会让查询重叠；退出后需要由人手动重启。它没有 Codex、cron、launchd 或开机自启动集成。启动时及每个 IST 新日期会清理仅属于本工具的过期报告，包含兼容的旧手动报告；无法识别的目录一律保留。
+
 旧 ATG 专用入口仍然可用。它只运行 `atgpay`，并保留原有筛选参数：
 
 ```bash

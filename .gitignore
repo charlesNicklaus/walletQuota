@@ -8,4 +8,5 @@ __pycache__/
 .superpowers/
 .firecrawl/
 reports/
+.*.wallet_quota_scheduler.lock
 *.tmp

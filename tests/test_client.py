@@ -184,12 +184,11 @@ class AtgClientTests(unittest.TestCase):
             ]
         )
         sleeps = []
-        timestamps = iter([100, 101, 102])
         client = AtgClient(
             settings(),
             transport=transport,
             sleep=sleeps.append,
-            clock_ms=lambda: next(timestamps),
+            clock_ms=lambda: 100,
         )
         client.login()
 

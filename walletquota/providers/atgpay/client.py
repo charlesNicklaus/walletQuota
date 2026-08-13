@@ -231,13 +231,19 @@ class AtgClient:
     def _signed_read(
         self, path: str, parameters: Mapping[str, Any]
     ) -> Mapping[str, Any]:
+        last_timestamp: Optional[int] = None
         for session_attempt in range(2):
             if self.user_id is None or self.session_key is None:
                 self.login()
 
             def signed_request() -> tuple[Mapping[str, Any], Mapping[str, str]]:
+                nonlocal last_timestamp
                 payload = dict(parameters)
-                payload["ts"] = self.clock_ms()
+                timestamp = self.clock_ms()
+                if last_timestamp is not None:
+                    timestamp = max(timestamp, last_timestamp + 1)
+                last_timestamp = timestamp
+                payload["ts"] = timestamp
                 payload["userId"] = self.user_id
                 headers = dict(self.base_headers)
                 headers["Signature"] = make_signature(self.session_key or "", payload)

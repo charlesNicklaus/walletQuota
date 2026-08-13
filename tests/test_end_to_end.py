@@ -71,6 +71,7 @@ class ComprehensiveOutputTests(unittest.TestCase):
         )
         upi = "alice123@paytm"
         account_number = "123456789012"
+        ifsc = "HDFC0000123"
         result = ProviderResult.success(
             "atgpay",
             orders,
@@ -83,6 +84,7 @@ class ComprehensiveOutputTests(unittest.TestCase):
                     "bank-1",
                     account=account_number,
                     bank_name="HDFC",
+                    ifsc=ifsc,
                 ),
             ),
         )
@@ -101,8 +103,10 @@ class ComprehensiveOutputTests(unittest.TestCase):
             self.assertEqual(terminal.count("范围 {} × 1".format(label)), 2)
         self.assertNotIn(upi, terminal)
         self.assertNotIn(account_number, terminal)
+        self.assertNotIn(ifsc, terminal)
         self.assertIn("a***3@p***m", terminal)
         self.assertIn("****9012", terminal)
+        self.assertIn("IFSC ****0123", terminal)
 
         with tempfile.TemporaryDirectory() as temporary:
             bundle = write_report_bundle(aggregate, Path(temporary))
@@ -114,8 +118,10 @@ class ComprehensiveOutputTests(unittest.TestCase):
         self.assertEqual(
             [account["account"] for account in accounts], [None, account_number]
         )
+        self.assertEqual([account["ifsc"] for account in accounts], [None, ifsc])
         self.assertNotIn(upi, csv_text)
         self.assertNotIn(account_number, csv_text)
+        self.assertNotIn(ifsc, csv_text)
 
 
 if __name__ == "__main__":

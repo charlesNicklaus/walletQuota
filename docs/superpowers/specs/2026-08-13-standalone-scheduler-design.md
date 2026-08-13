@@ -61,7 +61,7 @@
 候选项必须同时满足：
 
 1. 是报告根目录的直接子目录，不是文件或符号链接。
-2. 名称符合 walletQuota 当前快照格式：`YYYYMMDD_HHMMSS`，可带 `_2`、`_3` 等数字后缀。
+2. 名称符合 walletQuota 当前快照格式：`YYYYMMDD_HHMMSS`，可带从 `_2` 开始的数字后缀（包括 `_10` 及以后）。
 3. 目录内存在普通文件 `aggregate.json`，且该文件不是符号链接。
 4. JSON 可解析，顶层 `metadata.finished_at` 是带时区的 ISO 8601 时间。
 5. 新报告必须包含 `generator == "walletQuota"` 和 `schema_version == 1`。

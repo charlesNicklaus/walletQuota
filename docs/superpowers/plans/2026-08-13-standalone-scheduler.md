@@ -78,7 +78,7 @@ Extend `write_report_bundle()` metadata with exactly:
 In `walletquota/retention.py`, define:
 
 ```python
-SNAPSHOT_DIRECTORY = re.compile(r"^\d{8}_\d{6}(?:_[2-9]\d*)?$")
+SNAPSHOT_DIRECTORY = re.compile(r"^\d{8}_\d{6}(?:_(?:[2-9]|[1-9]\d+))?$")
 IST = ZoneInfo("Asia/Kolkata")
 ```
 

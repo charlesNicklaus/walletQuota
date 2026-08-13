@@ -216,6 +216,9 @@ class ReportBundleTests(TestCase):
                     "designated": "kept",
                 },
                 "items": [{"password": SENTINEL, "enabled": True}],
+                "rawAuthResponse": {"code": 200, "message": "must not persist"},
+                "authResponse": {"code": 200},
+                "loginResponse": {"code": 200},
             },
         )
         protected = ProviderResult.success(

@@ -33,6 +33,9 @@ _CREDENTIAL_ATTRIBUTE_AFFIXES = (
     "signature",
     "secret",
 )
+_RAW_AUTH_RESPONSE_NAMES = frozenset(
+    {"rawauthresponse", "authresponse", "loginresponse"}
+)
 
 
 def _decimal_text(value: Optional[Decimal]) -> str:
@@ -166,6 +169,7 @@ def _is_credential_attribute(key: Any) -> bool:
     normalized = str(key).replace("_", "").replace("-", "").lower()
     return (
         normalized in _CREDENTIAL_ATTRIBUTE_NAMES
+        or normalized in _RAW_AUTH_RESPONSE_NAMES
         or normalized.endswith(_CREDENTIAL_ATTRIBUTE_AFFIXES)
         or normalized.startswith(_CREDENTIAL_ATTRIBUTE_AFFIXES)
     )

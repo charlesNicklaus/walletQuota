@@ -6,5 +6,6 @@ __pycache__/
 .coverage
 .pytest_cache/
 .superpowers/
+.firecrawl/
 reports/
 *.tmp

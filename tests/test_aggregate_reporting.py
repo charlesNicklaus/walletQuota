@@ -241,3 +241,41 @@ class ReportBundleTests(TestCase):
             },
         )
         self.assertNotIn(SENTINEL, bundle.aggregate_json.read_text(encoding="utf-8"))
+
+    def test_nested_credentials_in_metadata_and_order_attributes_are_not_serialized(self):
+        result = aggregate_fixture()
+        channel = result.channels[0]
+        order = Order(
+            "atgpay",
+            "credential-order",
+            Decimal("1"),
+            attributes={
+                "safe": "kept",
+                "sessionKey": SENTINEL,
+                "nested": {"token": SENTINEL, "enabled": True},
+            },
+        )
+        protected = ProviderResult.success(
+            channel.provider,
+            (order,),
+            {
+                "safe": "kept",
+                "loginResponse": {"token": SENTINEL},
+                "nested": {"session": SENTINEL, "enabled": True},
+            },
+            channel.accounts,
+        )
+        protected_result = aggregate_results(
+            (protected,) + result.channels[1:], NOW, NOW
+        )
+
+        bundle = write_report_bundle(protected_result, self.directory)
+        payload = json.loads(bundle.aggregate_json.read_text(encoding="utf-8"))
+        channel_payload = payload["channels"]["atgpay"]
+
+        self.assertEqual(channel_payload["metadata"], {"safe": "kept", "nested": {"enabled": True}})
+        self.assertEqual(
+            channel_payload["orders"][0]["attributes"],
+            {"safe": "kept", "nested": {"enabled": True}},
+        )
+        self.assertNotIn(SENTINEL, bundle.aggregate_json.read_text(encoding="utf-8"))

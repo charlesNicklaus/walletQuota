@@ -5,8 +5,32 @@ from types import MappingProxyType
 from typing import Any, Mapping, Optional, Tuple
 
 
+class _ImmutableTuple(tuple):
+    """Tuple storage that preserves comparisons with the pre-freeze list API."""
+
+    __hash__ = tuple.__hash__
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, list):
+            return tuple(self) == tuple(other)
+        return tuple.__eq__(self, other)
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return _ImmutableTuple(_freeze(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze(item) for item in value)
+    return value
+
+
 def _immutable_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
-    return MappingProxyType(dict(value))
+    frozen = _freeze(value)
+    if not isinstance(frozen, Mapping):
+        raise TypeError("Expected a mapping")
+    return frozen
 
 
 ACCOUNT_KINDS = frozenset(

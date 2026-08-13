@@ -195,6 +195,17 @@ class AtgPayProviderTests(TestCase):
                 self.assertEqual(result.error.category, category)
                 self.assertNotIn("server secret", result.error.message)
 
+    def test_persistent_enrichment_authentication_error_is_categorized_as_authentication(self):
+        provider = AtgPayProvider(
+            {"ATGPAY_PHONE": "phone", "ATGPAY_PASSWORD": "password"},
+            collect=lambda settings: (_ for _ in ()).throw(AuthenticationError("expired")),
+        )
+
+        result = provider.run()
+
+        self.assertEqual(result.status, "error")
+        self.assertEqual(result.error.category, "authentication")
+
     def test_settings_repr_does_not_expose_password(self):
         provider = AtgPayProvider(
             {

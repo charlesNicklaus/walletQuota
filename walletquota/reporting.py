@@ -148,20 +148,20 @@ def _json_value(value: Any) -> Any:
         return _decimal_text(value)
     if isinstance(value, Mapping):
         return {str(key): _json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, (list, tuple, set, frozenset)):
         return [_json_value(item) for item in value]
     return value
 
 
-def _safe_account_attributes(value: Any) -> Any:
+def _safe_report_mapping(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
-            str(key): _safe_account_attributes(item)
+            str(key): _safe_report_mapping(item)
             for key, item in value.items()
             if not _is_credential_attribute(key)
         }
-    if isinstance(value, (list, tuple)):
-        return [_safe_account_attributes(item) for item in value]
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_safe_report_mapping(item) for item in value]
     return value
 
 
@@ -170,6 +170,7 @@ def _is_credential_attribute(key: Any) -> bool:
     return (
         normalized in _CREDENTIAL_ATTRIBUTE_NAMES
         or normalized in _RAW_AUTH_RESPONSE_NAMES
+        or normalized.startswith(("rawauth", "rawlogin"))
         or normalized.endswith(_CREDENTIAL_ATTRIBUTE_AFFIXES)
         or normalized.startswith(_CREDENTIAL_ATTRIBUTE_AFFIXES)
     )
@@ -185,7 +186,7 @@ def _account_dict(account: Account) -> Dict[str, Any]:
         "bank_name": account.bank_name,
         "ifsc": account.ifsc,
         "order_id": account.order_id,
-        "attributes": _json_value(_safe_account_attributes(account.attributes)),
+        "attributes": _json_value(_safe_report_mapping(account.attributes)),
     }
 
 
@@ -204,7 +205,7 @@ def _order_dict(order: Order) -> Dict[str, Any]:
         "currency": order.currency,
         "income": "" if order.income is None else _decimal_text(order.income),
         "balance": "" if order.balance is None else _decimal_text(order.balance),
-        "attributes": _json_value(order.attributes),
+        "attributes": _json_value(_safe_report_mapping(order.attributes)),
     }
 
 
@@ -213,7 +214,7 @@ def _channel_dict(result: ProviderResult) -> Dict[str, Any]:
         "status": result.status,
         "complete": result.complete,
         "summary": _json_value(summarize_orders(result.orders)),
-        "metadata": _json_value(result.metadata),
+        "metadata": _json_value(_safe_report_mapping(result.metadata)),
         "orders": [_order_dict(order) for order in result.orders],
         "account_summary": _account_summary(result.accounts),
         "accounts": [_account_dict(account) for account in result.accounts],

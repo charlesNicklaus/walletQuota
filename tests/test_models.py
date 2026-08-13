@@ -35,6 +35,22 @@ class OrderModelTests(TestCase):
         with self.assertRaises(TypeError):
             order.attributes["vip"] = 2
 
+    def test_order_attributes_are_deeply_immutable_copies(self):
+        attributes = {"details": {"tags": ["first"], "flags": {"new"}}}
+        order = Order("atgpay", "A1", Decimal("10"), attributes=attributes)
+
+        attributes["details"]["tags"].append("source-change")
+        attributes["details"]["flags"].add("source-change")
+
+        self.assertEqual(order.attributes["details"]["tags"], ("first",))
+        self.assertEqual(order.attributes["details"]["flags"], frozenset({"new"}))
+        with self.assertRaises(TypeError):
+            order.attributes["details"]["new"] = "result-change"
+        with self.assertRaises(AttributeError):
+            order.attributes["details"]["tags"].append("result-change")
+        with self.assertRaises(AttributeError):
+            order.attributes["details"]["flags"].add("result-change")
+
 
 class AccountModelTests(TestCase):
     def test_account_accepts_supported_kinds_with_an_account_or_upi(self):
@@ -74,6 +90,18 @@ class AccountModelTests(TestCase):
         with self.assertRaises(TypeError):
             account.attributes["enabled"] = False
 
+    def test_account_attributes_are_deeply_immutable_copies(self):
+        attributes = {"details": {"labels": ["kept"]}}
+        account = Account(
+            "atgpay", "bound_upi", "safe-id", upi="alice123@paytm", attributes=attributes
+        )
+
+        attributes["details"]["labels"].append("source-change")
+
+        self.assertEqual(account.attributes["details"]["labels"], ("kept",))
+        with self.assertRaises(TypeError):
+            account.attributes["details"]["labels"] = ()
+
 
 class ProviderResultTests(TestCase):
     def test_success_result_is_complete_and_copies_metadata(self):
@@ -87,6 +115,16 @@ class ProviderResultTests(TestCase):
         self.assertEqual(result.metadata["pages"], 1)
         with self.assertRaises(TypeError):
             result.metadata["pages"] = 3
+
+    def test_metadata_is_a_deeply_immutable_copy(self):
+        metadata = {"responses": [{"state": "kept"}]}
+        result = ProviderResult.success("atgpay", (), metadata)
+
+        metadata["responses"][0]["state"] = "source-change"
+
+        self.assertEqual(result.metadata["responses"][0]["state"], "kept")
+        with self.assertRaises(TypeError):
+            result.metadata["responses"][0]["state"] = "result-change"
 
     def test_partial_and_failure_have_safe_error_models(self):
         order = Order("atgpay", "A1", Decimal("10"))

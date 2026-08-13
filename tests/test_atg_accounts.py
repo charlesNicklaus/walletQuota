@@ -1,5 +1,6 @@
 from unittest import TestCase
 
+from atg_pool.client import AuthenticationError
 from walletquota.providers.atgpay.accounts import collect_accounts
 
 
@@ -263,3 +264,38 @@ class AccountCollectionTests(TestCase):
             ),
         )
         self.assertNotIn("raw-secret-response", repr(snapshot))
+
+    def test_enrichment_authentication_errors_propagate(self):
+        cases = (
+            ("bound", {"bindUpiList": []}, AuthenticationError("expired")),
+            ("cards", AuthenticationError("expired"), {"list": []}),
+            ("tasks", {"bindUpiList": []}, {"list": []}),
+        )
+        for source, bound, cards in cases[:2]:
+            with self.subTest(source=source):
+                client = FakeClient(
+                    bound=bound,
+                    cards=cards,
+                    task_pages={1: {"total": 0, "list": []}},
+                )
+                with self.assertRaises(AuthenticationError):
+                    collect_accounts(client)
+
+        with self.subTest(source="tasks"):
+            client = FakeClient(
+                bound={"bindUpiList": []},
+                cards={"list": []},
+                task_pages={1: AuthenticationError("expired")},
+            )
+            with self.assertRaises(AuthenticationError):
+                collect_accounts(client)
+
+        with self.subTest(source="order detail"):
+            client = FakeClient(
+                bound={"bindUpiList": []},
+                cards={"list": []},
+                task_pages={1: {"total": 1, "list": [{"orderNo": "ORD-1"}]}},
+                details={"ORD-1": AuthenticationError("expired")},
+            )
+            with self.assertRaises(AuthenticationError):
+                collect_accounts(client)

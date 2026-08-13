@@ -4,6 +4,8 @@ from typing import Any, List, Mapping, Sequence, Tuple
 
 from walletquota.models import Account
 
+from .client import AuthenticationError
+
 
 _DERIVED_ID_LENGTH = 16
 _MAX_CLAIMED_TASK_PAGES = 1000
@@ -178,6 +180,8 @@ def _claimed_order_ids(client: Any, page_size: int, warnings: List[str]) -> Tupl
             data = client.fetch_my_tasks_page(page, page_size)
             total = _total(data)
             rows = _rows(data, "list")
+        except AuthenticationError:
+            raise
         except Exception:
             _warn_once(warnings, "ATG claimed task collection failed")
             break
@@ -224,11 +228,15 @@ def collect_accounts(client: Any, task_page_size: int = _DEFAULT_TASK_PAGE_SIZE)
     try:
         bound_accounts, bound_upi_total = _bound_upi_accounts(client.fetch_bound_upis(1))
         collected.extend(bound_accounts)
+    except AuthenticationError:
+        raise
     except Exception:
         _warn_once(warnings, "ATG bound UPI account collection failed")
     try:
         bank_accounts, bank_card_total = _bank_card_accounts(client.fetch_bank_cards())
         collected.extend(bank_accounts)
+    except AuthenticationError:
+        raise
     except Exception:
         _warn_once(warnings, "ATG bank card account collection failed")
 
@@ -240,6 +248,8 @@ def collect_accounts(client: Any, task_page_size: int = _DEFAULT_TASK_PAGE_SIZE)
         seen_order_ids.add(order_id)
         try:
             collected.extend(_order_detail_accounts(order_id, client.fetch_order_detail(order_id)))
+        except AuthenticationError:
+            raise
         except Exception:
             _warn_once(warnings, "ATG claimed order detail collection failed")
 

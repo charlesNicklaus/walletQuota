@@ -57,14 +57,18 @@ def main(
         print("Scheduler setup failed", file=stderr)
         return 1
 
-    query_args = ["--env-file", str(args.env_file)]
-    if args.output_dir is not None:
-        query_args.extend(["--output-dir", str(args.output_dir)])
+    report_directory = settings.report_directory.resolve()
+    query_args = [
+        "--env-file",
+        str(args.env_file),
+        "--output-dir",
+        str(report_directory),
+    ]
     if args.verbose:
         query_args.append("--verbose")
 
     def cleanup(today):
-        result = cleanup_expired_reports(settings.report_directory, today)
+        result = cleanup_expired_reports(report_directory, today)
         _log_cleanup(result, stdout, stderr)
         return result
 
@@ -75,13 +79,13 @@ def main(
         raise KeyboardInterrupt
 
     try:
-        with SchedulerLock.acquire(settings.report_directory):
+        with SchedulerLock.acquire(report_directory):
             if threading.current_thread() is threading.main_thread():
                 previous_handler = signal.getsignal(signal.SIGTERM)
                 signal.signal(signal.SIGTERM, stop)
                 installed_handler = True
             scheduler = StandaloneScheduler(
-                settings.report_directory,
+                report_directory,
                 lambda: wallet_quota.main(query_args, stdout, stderr),
                 cleanup,
                 lambda: datetime.now(IST),

@@ -68,13 +68,14 @@ class SchedulerCliTests(TestCase):
 
         self.assertEqual(result, 0)
         load.assert_called_once_with(self.env_file, output_dir=self.root / "chosen")
-        self.assertEqual(captured["report_directory"], self.report_directory)
+        frozen_root = self.report_directory.resolve()
+        self.assertEqual(captured["report_directory"], frozen_root)
         query.assert_called_once_with(
-            ["--env-file", str(self.env_file), "--output-dir", str(self.root / "chosen"), "--verbose"],
+            ["--env-file", str(self.env_file), "--output-dir", str(frozen_root), "--verbose"],
             stdout,
             stderr,
         )
-        cleanup.assert_called_once_with(self.report_directory, date(2026, 8, 12))
+        cleanup.assert_called_once_with(frozen_root, date(2026, 8, 12))
         self.assertEqual(stdout.getvalue(), "Report cleanup: deleted 0, preserved 0\n")
         self.assertTrue(captured["locked"])
         self.assertTrue(captured["released"])
@@ -189,6 +190,117 @@ class SchedulerCliTests(TestCase):
         self.assertTrue(captured["released"])
         self.assertEqual(signal_call.call_args_list[-1].args, (signal.SIGTERM, previous))
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_freezes_report_root_when_env_directory_changes_after_startup(self):
+        original_root = self.root / "original-reports"
+        changed_root = self.root / "changed-reports"
+        original_root.mkdir()
+        changed_root.mkdir()
+        self.env_file.write_text(
+            "ENABLED_PROVIDERS=atgpay\nREPORT_DIRECTORY={}\n".format(original_root),
+            encoding="utf-8",
+        )
+        settings = SimpleNamespace(report_directory=original_root)
+        cleanup_roots = []
+        query_calls = []
+        captured = {}
+        env_file = self.env_file
+
+        class FakeLock:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *unused):
+                return None
+
+        class FakeScheduler:
+            def __init__(self, report_root, query, cleanup, clock, **unused):
+                captured["report_root"] = report_root
+                captured["query"] = query
+                captured["cleanup"] = cleanup
+
+            def run(self):
+                captured["cleanup"](date(2026, 8, 12))
+                env_file.write_text(
+                    "ENABLED_PROVIDERS=atgpay\nREPORT_DIRECTORY={}\n".format(changed_root),
+                    encoding="utf-8",
+                )
+                captured["query"]()
+                captured["cleanup"](date(2026, 8, 12))
+                captured["query"]()
+
+        with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=settings), mock.patch.object(
+            wallet_quota_scheduler.SchedulerLock, "acquire", return_value=FakeLock()
+        ) as acquire, mock.patch.object(wallet_quota_scheduler, "StandaloneScheduler", FakeScheduler), mock.patch.object(
+            wallet_quota_scheduler, "cleanup_expired_reports", side_effect=lambda root, today: cleanup_roots.append(root) or CleanupResult((), (), ())
+        ), mock.patch.object(
+            wallet_quota_scheduler.wallet_quota, "main", side_effect=lambda args, stdout, stderr: query_calls.append(args) or 0
+        ):
+            result = wallet_quota_scheduler.main(["--env-file", str(self.env_file)], io.StringIO(), io.StringIO())
+
+        frozen_root = original_root.resolve()
+        self.assertEqual(result, 0)
+        self.assertEqual(acquire.call_args.args, (frozen_root,))
+        self.assertEqual(captured["report_root"], frozen_root)
+        self.assertEqual(cleanup_roots, [frozen_root, frozen_root])
+        self.assertEqual(
+            query_calls,
+            [
+                ["--env-file", str(self.env_file), "--output-dir", str(frozen_root)],
+                ["--env-file", str(self.env_file), "--output-dir", str(frozen_root)],
+            ],
+        )
+
+    def test_freezes_resolved_symlink_root_after_retarget(self):
+        original_root = self.root / "original-reports"
+        replacement_root = self.root / "replacement-reports"
+        original_root.mkdir()
+        replacement_root.mkdir()
+        alias = self.root / "reports-link"
+        alias.symlink_to(original_root, target_is_directory=True)
+        settings = SimpleNamespace(report_directory=alias)
+        cleanup_roots = []
+        query_calls = []
+        captured = {}
+
+        class FakeLock:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *unused):
+                return None
+
+        class FakeScheduler:
+            def __init__(self, report_root, query, cleanup, clock, **unused):
+                captured["report_root"] = report_root
+                captured["query"] = query
+                captured["cleanup"] = cleanup
+
+            def run(self):
+                captured["cleanup"](date(2026, 8, 12))
+                alias.unlink()
+                alias.symlink_to(replacement_root, target_is_directory=True)
+                captured["cleanup"](date(2026, 8, 12))
+                captured["query"]()
+
+        with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=settings), mock.patch.object(
+            wallet_quota_scheduler.SchedulerLock, "acquire", return_value=FakeLock()
+        ) as acquire, mock.patch.object(wallet_quota_scheduler, "StandaloneScheduler", FakeScheduler), mock.patch.object(
+            wallet_quota_scheduler, "cleanup_expired_reports", side_effect=lambda root, today: cleanup_roots.append(root) or CleanupResult((), (), ())
+        ), mock.patch.object(
+            wallet_quota_scheduler.wallet_quota, "main", side_effect=lambda args, stdout, stderr: query_calls.append(args) or 0
+        ):
+            result = wallet_quota_scheduler.main(["--env-file", str(self.env_file)], io.StringIO(), io.StringIO())
+
+        frozen_root = original_root.resolve()
+        self.assertEqual(result, 0)
+        self.assertEqual(acquire.call_args.args, (frozen_root,))
+        self.assertEqual(captured["report_root"], frozen_root)
+        self.assertEqual(cleanup_roots, [frozen_root, frozen_root])
+        self.assertEqual(
+            query_calls,
+            [["--env-file", str(self.env_file), "--output-dir", str(frozen_root)]],
+        )
 
     def test_local_bounded_integration_keeps_outside_sentinel(self):
         report_directory = self.root / "reports"

@@ -58,6 +58,14 @@ class ChannelSpecTests(TestCase):
             ):
                 spec().url_for(value, "/auth/login")
 
+    def test_rejects_spoofed_canonical_host_pair_for_millerpay(self):
+        with self.assertRaisesRegex(ValueError, "trusted API endpoint"):
+            replace(
+                spec(),
+                api_base="https://api.evil.example/app",
+                web_origin="https://app-web.evil.example",
+            )
+
     def test_rejects_invalid_origin_and_non_exact_allowlist(self):
         with self.assertRaisesRegex(ValueError, "trusted web origin"):
             replace(spec(), web_origin="https://evil.example")

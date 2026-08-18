@@ -15,6 +15,10 @@ READ_ONLY_PATHS = frozenset(
     }
 )
 _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+_TRUSTED_PROVIDER_HOSTS = {
+    "atgpay": ("api.atg-game.com", "app-web.atg-game.com"),
+    "millerpay": ("api.millerpay-app.com", "app-web.millerpay-app.com"),
+}
 
 
 def _trusted_endpoint(value: str) -> bool:
@@ -51,16 +55,6 @@ def _trusted_origin(value: str) -> bool:
         return False
 
 
-def _matches_endpoint_origin(api_base: str, web_origin: str) -> bool:
-    api_host = urlsplit(api_base).hostname
-    origin_host = urlsplit(web_origin).hostname
-    return (
-        api_host is not None
-        and api_host.startswith("api.")
-        and origin_host == "app-web." + api_host[len("api.") :]
-    )
-
-
 @dataclass(frozen=True)
 class ChannelSpec:
     name: str
@@ -79,10 +73,16 @@ class ChannelSpec:
         object.__setattr__(self, "allowed_paths", frozenset(self.allowed_paths))
         if not _PROVIDER_NAME.fullmatch(self.name):
             raise ValueError("Invalid provider name")
-        if not _trusted_endpoint(self.api_base):
+        trusted_hosts = _TRUSTED_PROVIDER_HOSTS.get(self.name)
+        if (
+            trusted_hosts is None
+            or not _trusted_endpoint(self.api_base)
+            or urlsplit(self.api_base).hostname != trusted_hosts[0]
+        ):
             raise ValueError("Channel must use a trusted API endpoint")
-        if not _trusted_origin(self.web_origin) or not _matches_endpoint_origin(
-            self.api_base, self.web_origin
+        if (
+            not _trusted_origin(self.web_origin)
+            or urlsplit(self.web_origin).hostname != trusted_hosts[1]
         ):
             raise ValueError("Channel must use a trusted web origin")
         if self.allowed_paths != READ_ONLY_PATHS:

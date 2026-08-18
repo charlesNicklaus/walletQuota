@@ -1,3 +1,4 @@
+import urllib.error
 from types import SimpleNamespace
 from unittest import TestCase
 
@@ -6,6 +7,8 @@ from walletquota.providers.signed_pool.client import (
     AuthenticationError,
     HTTPStatusError,
     SignedPoolClient,
+    TransportError,
+    UrllibTransport,
     make_signature,
 )
 from walletquota.providers.signed_pool.spec import ChannelSpec, READ_ONLY_PATHS
@@ -35,6 +38,32 @@ class ScriptedTransport:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class ScriptedOpener:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def open(self, request, timeout):
+        self.calls.append((request, timeout))
+        if isinstance(self.response, Exception):
+            raise self.response
+        return self.response
+
+
+class ScriptedResponse:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, unused_type, unused_value, unused_traceback):
+        return False
+
+    def read(self):
+        return self.raw
 
 
 def settings():
@@ -136,3 +165,50 @@ class SignedPoolClientTests(TestCase):
         with self.assertRaisesRegex(APIError, "trusted API endpoint"):
             client._url("/auth/login")
         self.assertEqual(transport.calls, [])
+
+    def test_network_transport_error_is_fixed_and_provider_neutral(self):
+        raw_sentinel = "raw-network-sentinel"
+        transport = UrllibTransport()
+        opener = ScriptedOpener(urllib.error.URLError(raw_sentinel))
+        transport.opener = opener
+
+        with self.assertRaises(TransportError) as raised:
+            transport.post("https://example.invalid", {}, {}, 1.0)
+
+        message = str(raised.exception)
+        self.assertEqual(message, "The signed pool API could not be reached")
+        self.assertNotIn("ATG", message)
+        self.assertNotIn(raw_sentinel, message)
+        self.assertEqual(len(opener.calls), 1)
+
+    def test_invalid_json_transport_error_is_fixed_and_provider_neutral(self):
+        raw_sentinel = "raw-json-sentinel"
+        transport = UrllibTransport()
+        opener = ScriptedOpener(ScriptedResponse(raw_sentinel.encode("utf-8")))
+        transport.opener = opener
+
+        with self.assertRaises(TransportError) as raised:
+            transport.post("https://example.invalid", {}, {}, 1.0)
+
+        message = str(raised.exception)
+        self.assertEqual(message, "The signed pool API returned invalid JSON")
+        self.assertNotIn("ATG", message)
+        self.assertNotIn(raw_sentinel, message)
+        self.assertEqual(len(opener.calls), 1)
+
+    def test_non_mapping_transport_error_is_fixed_and_provider_neutral(self):
+        raw_sentinel = "raw-non-mapping-sentinel"
+        transport = UrllibTransport()
+        opener = ScriptedOpener(
+            ScriptedResponse(('"{}"'.format(raw_sentinel)).encode("utf-8"))
+        )
+        transport.opener = opener
+
+        with self.assertRaises(TransportError) as raised:
+            transport.post("https://example.invalid", {}, {}, 1.0)
+
+        message = str(raised.exception)
+        self.assertEqual(message, "The signed pool API returned an invalid response")
+        self.assertNotIn("ATG", message)
+        self.assertNotIn(raw_sentinel, message)
+        self.assertEqual(len(opener.calls), 1)

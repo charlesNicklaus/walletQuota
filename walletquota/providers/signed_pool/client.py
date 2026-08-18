@@ -102,13 +102,13 @@ class UrllibTransport:
                 error.code, retry_after=_retry_after(error.headers)
             ) from error
         except (urllib.error.URLError, TimeoutError, OSError) as error:
-            raise TransportError("The ATG API could not be reached") from error
+            raise TransportError("The signed pool API could not be reached") from error
         try:
             value = json.loads(raw)
         except json.JSONDecodeError as error:
-            raise TransportError("The ATG API returned invalid JSON") from error
+            raise TransportError("The signed pool API returned invalid JSON") from error
         if not isinstance(value, Mapping):
-            raise TransportError("The ATG API returned an invalid response")
+            raise TransportError("The signed pool API returned an invalid response")
         return value
 
 

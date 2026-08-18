@@ -1554,7 +1554,7 @@ git commit -m "feat: add millerpay order pool provider"
 - Consumes: registry key `millerpay`, existing CLI/reporting/scheduler entry points, and existing report privacy guarantees.
 - Produces: documented local configuration and no-network proof that manual and scheduled execution preserve the same two-channel configuration and reporting semantics.
 
-- [ ] **Step 1: Add failing manual and scheduler configuration tests**
+- [ ] **Step 1: Add manual and scheduler characterization tests**
 
 In `tests/test_wallet_quota_cli.py`, add a verbose test with static `atgpay` and `millerpay` providers and assert both names appear, both are called once, and neither configured password appears in stdout/stderr.
 

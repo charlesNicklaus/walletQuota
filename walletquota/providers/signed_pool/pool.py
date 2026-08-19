@@ -157,7 +157,7 @@ def collect_pool(
         observed_totals=tuple(totals),
         pages_fetched=pages_fetched,
         duplicate_count=duplicate_count,
-        complete=len(orders) == latest_total,
+        complete=len(set(totals)) <= 1 and len(orders) == latest_total,
         stable=len(set(totals)) <= 1,
         stop_reason=stop_reason,
         sort_type=settings.sort_type,

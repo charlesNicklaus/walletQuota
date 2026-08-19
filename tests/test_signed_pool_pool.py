@@ -54,6 +54,22 @@ class SignedPoolCollectionTests(TestCase):
         self.assertIsNone(snapshot.orders[0].vip)
         self.assertTrue(snapshot.complete)
 
+    def test_unstable_totals_do_not_complete_a_three_order_snapshot(self):
+        client = PageClient(
+            [
+                {"total": 4, "list": [{"orderNo": "M-1", "orderAmount": 500}]},
+                {"total": 3, "list": [{"orderNo": "M-2", "orderAmount": 501}]},
+                {"total": 3, "list": [{"orderNo": "M-3", "orderAmount": 502}]},
+            ]
+        )
+
+        snapshot = collect_pool(client, settings(), sleep=lambda unused: None)
+
+        self.assertEqual(snapshot.observed_totals, (4, 3, 3))
+        self.assertEqual(len(snapshot.orders), 3)
+        self.assertFalse(snapshot.stable)
+        self.assertFalse(snapshot.complete)
+
     def test_rejects_negative_and_non_finite_amounts(self):
         for amount in ("-1", "NaN", "Infinity"):
             with self.subTest(amount=amount):

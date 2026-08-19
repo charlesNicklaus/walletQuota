@@ -90,7 +90,7 @@ class PoolCollectionTests(unittest.TestCase):
 
         self.assertEqual(snapshot.observed_totals, (4, 3))
         self.assertFalse(snapshot.stable)
-        self.assertTrue(snapshot.complete)
+        self.assertFalse(snapshot.complete)
 
     def test_empty_page_before_total_is_incomplete(self):
         client = PageClient([{"total": 10, "list": []}])

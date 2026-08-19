@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field, replace
+import math
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
@@ -21,6 +22,15 @@ def _number(values: Mapping[str, str], key: str, default: float) -> float:
         return float(values.get(key, str(default)))
     except (TypeError, ValueError) as error:
         raise ConfigError("{} must be a number".format(key)) from error
+
+
+def _trusted_api_base(value: str) -> str:
+    try:
+        return MILLERPAY_SPEC.normalized_api_base(value)
+    except ValueError as error:
+        raise ConfigError(
+            "MILLERPAY_API_BASE must be the trusted MillerPay endpoint"
+        ) from error
 
 
 @dataclass(frozen=True)
@@ -47,9 +57,9 @@ class MillerPaySettings:
         settings = cls(
             phone=values["MILLERPAY_PHONE"],
             password=values["MILLERPAY_PASSWORD"],
-            api_base=values.get(
-                "MILLERPAY_API_BASE", MILLERPAY_SPEC.api_base
-            ).rstrip("/"),
+            api_base=_trusted_api_base(
+                values.get("MILLERPAY_API_BASE", MILLERPAY_SPEC.api_base)
+            ),
             sort_type=_integer(values, "MILLERPAY_SORT_TYPE", 1),
             order_type=_integer(values, "MILLERPAY_ORDER_TYPE", 1),
             page_size=_integer(values, "MILLERPAY_PAGE_SIZE", 10),
@@ -73,9 +83,6 @@ class MillerPaySettings:
             raise ConfigError("MILLERPAY_PAGE_SIZE must be between 1 and 1000")
         if self.request_delay_ms < 0:
             raise ConfigError("MILLERPAY_REQUEST_DELAY_MS cannot be negative")
-        if self.timeout_seconds <= 0:
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
             raise ConfigError("MILLERPAY_TIMEOUT_SECONDS must be greater than zero")
-        if self.api_base.rstrip("/") != MILLERPAY_SPEC.api_base:
-            raise ConfigError(
-                "MILLERPAY_API_BASE must be the trusted MillerPay endpoint"
-            )
+        _trusted_api_base(self.api_base)

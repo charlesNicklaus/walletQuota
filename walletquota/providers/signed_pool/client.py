@@ -1,6 +1,7 @@
 import hashlib
 import http.cookiejar
 import json
+import math
 import time
 import urllib.error
 import urllib.request
@@ -8,6 +9,9 @@ from email.message import Message
 from typing import Any, Callable, Mapping, Optional, Protocol
 
 from .spec import ChannelSpec
+
+
+MAX_RETRY_AFTER_SECONDS = 1.0
 
 
 class APIError(RuntimeError):
@@ -67,9 +71,12 @@ def _retry_after(headers: Message) -> Optional[float]:
     if raw is None:
         return None
     try:
-        return max(0.0, float(raw))
+        delay = float(raw)
     except ValueError:
         return None
+    if not math.isfinite(delay):
+        return None
+    return min(MAX_RETRY_AFTER_SECONDS, max(0.0, delay))
 
 
 class UrllibTransport:

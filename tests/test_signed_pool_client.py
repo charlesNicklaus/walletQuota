@@ -1,4 +1,5 @@
 import urllib.error
+from email.message import Message
 from types import SimpleNamespace
 from unittest import TestCase
 
@@ -9,6 +10,7 @@ from walletquota.providers.signed_pool.client import (
     SignedPoolClient,
     TransportError,
     UrllibTransport,
+    _retry_after,
     make_signature,
 )
 from walletquota.providers.signed_pool.spec import ChannelSpec, READ_ONLY_PATHS
@@ -92,6 +94,20 @@ def success(**data):
 
 
 class SignedPoolClientTests(TestCase):
+    def test_retry_after_rejects_non_finite_header_values(self):
+        for value in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(value=value):
+                headers = Message()
+                headers["Retry-After"] = value
+
+                self.assertIsNone(_retry_after(headers))
+
+    def test_retry_after_is_capped_to_the_maximum_backoff_delay(self):
+        headers = Message()
+        headers["Retry-After"] = "9999"
+
+        self.assertEqual(_retry_after(headers), 1.0)
+
     def test_uses_channel_origin_url_and_unsigned_login(self):
         transport = ScriptedTransport([login()])
         client = SignedPoolClient(settings(), MILLER_SPEC, transport=transport)

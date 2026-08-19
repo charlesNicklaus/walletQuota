@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field, replace
+import math
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
-from urllib.parse import urlsplit
+
+from .spec import ATGPAY_SPEC
 
 
 class ConfigError(ValueError):
@@ -62,6 +64,13 @@ def _number(values: Mapping[str, str], key: str, default: float) -> float:
         raise ConfigError("{} must be a number".format(key)) from error
 
 
+def _trusted_api_base(value: str) -> str:
+    try:
+        return ATGPAY_SPEC.normalized_api_base(value)
+    except ValueError as error:
+        raise ConfigError("ATG_API_BASE must be the trusted ATG endpoint") from error
+
+
 @dataclass(frozen=True)
 class AtgSettings:
     phone: str
@@ -99,9 +108,9 @@ class AtgSettings:
         settings = cls(
             phone=values["ATG_PHONE"],
             password=values["ATG_PASSWORD"],
-            api_base=values.get(
-                "ATG_API_BASE", "https://api.atg-game.com/app"
-            ).rstrip("/"),
+            api_base=_trusted_api_base(
+                values.get("ATG_API_BASE", "https://api.atg-game.com/app")
+            ),
             sort_type=_integer(values, "ATG_SORT_TYPE", 1),
             order_type=_integer(values, "ATG_ORDER_TYPE", 4),
             page_size=_integer(values, "ATG_PAGE_SIZE", 10),
@@ -130,24 +139,9 @@ class AtgSettings:
             raise ConfigError("ATG_PAGE_SIZE must be between 1 and 1000")
         if self.request_delay_ms < 0:
             raise ConfigError("ATG_REQUEST_DELAY_MS cannot be negative")
-        if self.timeout_seconds <= 0:
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
             raise ConfigError("ATG_TIMEOUT_SECONDS must be greater than zero")
-        try:
-            parsed = urlsplit(self.api_base)
-            trusted_endpoint = (
-                parsed.scheme == "https"
-                and parsed.hostname == "api.atg-game.com"
-                and parsed.port in {None, 443}
-                and parsed.username is None
-                and parsed.password is None
-                and parsed.path.rstrip("/") == "/app"
-                and not parsed.query
-                and not parsed.fragment
-            )
-        except ValueError:
-            trusted_endpoint = False
-        if not trusted_endpoint:
-            raise ConfigError("ATG_API_BASE must be the trusted ATG endpoint")
+        _trusted_api_base(self.api_base)
 
 
 def _prefer_channel_prefix(values: Mapping[str, str]) -> Dict[str, str]:

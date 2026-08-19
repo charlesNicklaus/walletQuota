@@ -40,6 +40,17 @@ class MillerPaySettingsTests(TestCase):
         self.assertEqual(value.timeout_seconds, 12.5)
         self.assertEqual(value.report_directory, Path("miller-reports"))
 
+    def test_normalizes_the_equivalent_default_https_port(self):
+        value = MillerPaySettings.from_values(
+            {
+                "MILLERPAY_PHONE": "phone",
+                "MILLERPAY_PASSWORD": "secret",
+                "MILLERPAY_API_BASE": "https://api.millerpay-app.com:443/app/",
+            }
+        )
+
+        self.assertEqual(value.api_base, "https://api.millerpay-app.com/app")
+
     def test_only_safe_runtime_overrides_are_applied(self):
         value = MillerPaySettings.from_values(
             {"MILLERPAY_PHONE": "phone", "MILLERPAY_PASSWORD": "secret"},
@@ -72,6 +83,9 @@ class MillerPaySettingsTests(TestCase):
             ("MILLERPAY_PAGE_SIZE", "1001", "between 1 and 1000"),
             ("MILLERPAY_REQUEST_DELAY_MS", "-1", "cannot be negative"),
             ("MILLERPAY_TIMEOUT_SECONDS", "0", "greater than zero"),
+            ("MILLERPAY_TIMEOUT_SECONDS", "nan", "greater than zero"),
+            ("MILLERPAY_TIMEOUT_SECONDS", "inf", "greater than zero"),
+            ("MILLERPAY_TIMEOUT_SECONDS", "-inf", "greater than zero"),
             ("MILLERPAY_TIMEOUT_SECONDS", "soon", "must be a number"),
         )
         for key, raw_value, message in cases:

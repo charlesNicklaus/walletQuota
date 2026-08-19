@@ -52,11 +52,20 @@ class ChannelSpecTests(TestCase):
             "https://evil.example/app",
             "https://api.millerpay-app.com/app/extra",
             "https://user:password@api.millerpay-app.com/app",
+            "https://api.millerpay-app.com:8443/app",
         ):
             with self.subTest(value=value), self.assertRaisesRegex(
                 ValueError, "trusted API endpoint"
             ):
                 spec().url_for(value, "/auth/login")
+
+    def test_normalizes_the_equivalent_default_https_port(self):
+        self.assertEqual(
+            spec().url_for(
+                "https://api.millerpay-app.com:443/app", "/auth/login"
+            ),
+            "https://api.millerpay-app.com/app/auth/login",
+        )
 
     def test_rejects_spoofed_canonical_host_pair_for_millerpay(self):
         with self.assertRaisesRegex(ValueError, "trusted API endpoint"):

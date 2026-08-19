@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import FrozenSet
+from typing import FrozenSet, Optional
 from urllib.parse import urlsplit
 
 
@@ -21,10 +21,10 @@ _TRUSTED_PROVIDER_HOSTS = {
 }
 
 
-def _trusted_endpoint(value: str) -> bool:
+def _normalized_endpoint(value: str) -> Optional[str]:
     try:
         parsed = urlsplit(value)
-        return (
+        if (
             parsed.scheme == "https"
             and parsed.hostname is not None
             and parsed.port in {None, 443}
@@ -33,9 +33,11 @@ def _trusted_endpoint(value: str) -> bool:
             and parsed.path.rstrip("/") == "/app"
             and not parsed.query
             and not parsed.fragment
-        )
+        ):
+            return "https://{}/app".format(parsed.hostname)
     except ValueError:
-        return False
+        pass
+    return None
 
 
 def _trusted_origin(value: str) -> bool:
@@ -68,7 +70,16 @@ class ChannelSpec:
     allowed_paths: FrozenSet[str]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "api_base", self.api_base.rstrip("/"))
+        normalized_api_base = _normalized_endpoint(self.api_base)
+        object.__setattr__(
+            self,
+            "api_base",
+            (
+                normalized_api_base
+                if normalized_api_base is not None
+                else self.api_base.rstrip("/")
+            ),
+        )
         object.__setattr__(self, "web_origin", self.web_origin.rstrip("/"))
         object.__setattr__(self, "allowed_paths", frozenset(self.allowed_paths))
         if not _PROVIDER_NAME.fullmatch(self.name):
@@ -76,7 +87,7 @@ class ChannelSpec:
         trusted_hosts = _TRUSTED_PROVIDER_HOSTS.get(self.name)
         if (
             trusted_hosts is None
-            or not _trusted_endpoint(self.api_base)
+            or normalized_api_base is None
             or urlsplit(self.api_base).hostname != trusted_hosts[0]
         ):
             raise ValueError("Channel must use a trusted API endpoint")
@@ -88,10 +99,14 @@ class ChannelSpec:
         if self.allowed_paths != READ_ONLY_PATHS:
             raise ValueError("Channel must use the exact read-only allowlist")
 
-    def url_for(self, configured_api_base: str, path: str) -> str:
-        configured = configured_api_base.rstrip("/")
-        if not _trusted_endpoint(configured) or configured != self.api_base:
+    def normalized_api_base(self, configured_api_base: str) -> str:
+        configured = _normalized_endpoint(configured_api_base)
+        if configured is None or configured != self.api_base:
             raise ValueError("Channel must use its trusted API endpoint")
+        return configured
+
+    def url_for(self, configured_api_base: str, path: str) -> str:
+        configured = self.normalized_api_base(configured_api_base)
         if path not in self.allowed_paths:
             raise ValueError("Unsupported API endpoint")
         return "{}{}".format(configured, path)

@@ -86,13 +86,25 @@ class SettingsTests(unittest.TestCase):
         accepted = self.write_env(
             "ATG_PHONE=9876543210\n"
             "ATG_PASSWORD=secret\n"
-            "ATG_API_BASE=https://api.atg-game.com/app/\n"
+            "ATG_API_BASE=https://api.atg-game.com:443/app/\n"
         )
 
         self.assertEqual(
             Settings.load(accepted).api_base,
             "https://api.atg-game.com/app",
         )
+
+    def test_rejects_non_finite_timeout(self):
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                path = self.write_env(
+                    "ATG_PHONE=9876543210\n"
+                    "ATG_PASSWORD=secret\n"
+                    "ATG_TIMEOUT_SECONDS={}\n".format(value)
+                )
+
+                with self.assertRaisesRegex(ConfigError, "greater than zero"):
+                    Settings.load(path)
 
     def test_rejects_untrusted_or_ambiguous_atg_api_bases(self):
         values = (

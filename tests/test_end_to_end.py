@@ -11,6 +11,7 @@ from atg_pool.report import build_summary
 from walletquota.aggregate import aggregate_results
 from walletquota.models import Account, Order, ProviderResult
 from walletquota.reporting import format_terminal_report, write_report_bundle
+from walletquota.summary import summarize_orders
 
 
 class FixtureClient:
@@ -55,6 +56,129 @@ class ConfirmedResponseContractTests(unittest.TestCase):
 
 
 class ComprehensiveOutputTests(unittest.TestCase):
+    def test_two_channels_keep_full_accounts_local_and_remove_nested_secrets(self):
+        secret_values = {
+            "password": "miller-password-sentinel",
+            "loginToken": "miller-login-token-sentinel",
+            "sessionKey": "miller-session-key-sentinel",
+            "cookie": "miller-cookie-sentinel",
+            "Signature": "miller-signature-sentinel",
+            "authorization": "miller-authorization-sentinel",
+        }
+        sensitive_attributes = {
+            "password": secret_values["password"],
+            "nested": {
+                "loginToken": secret_values["loginToken"],
+                "items": [
+                    {"sessionKey": secret_values["sessionKey"]},
+                    {"cookie": secret_values["cookie"]},
+                    {"Signature": secret_values["Signature"]},
+                    {"authorization": secret_values["authorization"]},
+                ],
+            },
+        }
+        full_upi = "miller.collector@upi"
+        full_account_number = "123456789012"
+        full_ifsc = "HDFC0000123"
+        atgpay = ProviderResult.success(
+            "atgpay",
+            (Order("atgpay", "ATG-1", Decimal("1")),),
+            {},
+        )
+        millerpay = ProviderResult.success(
+            "millerpay",
+            tuple(
+                Order(
+                    "millerpay",
+                    "MILLER-{}".format(index),
+                    amount,
+                    attributes=sensitive_attributes,
+                )
+                for index, amount in enumerate(
+                    (
+                        Decimal("99.99"),
+                        Decimal("100"),
+                        Decimal("10000"),
+                        Decimal("20000"),
+                        Decimal("50000.01"),
+                    ),
+                    start=1,
+                )
+            ),
+            {"nested": sensitive_attributes},
+            (
+                Account(
+                    "millerpay",
+                    "bound_upi",
+                    "miller-upi-1",
+                    upi=full_upi,
+                    attributes=sensitive_attributes,
+                ),
+                Account(
+                    "millerpay",
+                    "bank_account",
+                    "miller-bank-1",
+                    account=full_account_number,
+                    bank_name="HDFC",
+                    ifsc=full_ifsc,
+                    attributes=sensitive_attributes,
+                ),
+            ),
+        )
+        now = datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc)
+        aggregate = aggregate_results((atgpay, millerpay), now, now)
+
+        terminal = format_terminal_report(aggregate)
+        expected_ranges = [
+            ("<100", 1),
+            ("100-10000", 1),
+            ("10000-20000", 1),
+            ("20000-50000", 1),
+            (">50000", 1),
+        ]
+        self.assertEqual(
+            [
+                (row["label"], row["count"])
+                for row in summarize_orders(millerpay.orders)["amount_distribution"]
+            ],
+            expected_ranges,
+        )
+        self.assertIn("atgpay: success", terminal)
+        self.assertIn("millerpay: success", terminal)
+        self.assertNotIn(full_upi, terminal)
+        self.assertNotIn(full_account_number, terminal)
+        self.assertNotIn(full_ifsc, terminal)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = write_report_bundle(aggregate, Path(temporary))
+            aggregate_text = bundle.aggregate_json.read_text(encoding="utf-8")
+            payload = json.loads(aggregate_text)
+            csv_texts = {
+                provider: path.read_text(encoding="utf-8")
+                for provider, path in bundle.channel_csv.items()
+            }
+
+        self.assertEqual(set(bundle.channel_csv), {"atgpay", "millerpay"})
+        self.assertEqual(
+            payload["channels"]["millerpay"]["accounts"][0]["upi"], full_upi
+        )
+        self.assertEqual(
+            payload["channels"]["millerpay"]["accounts"][1]["account"],
+            full_account_number,
+        )
+        self.assertEqual(
+            payload["channels"]["millerpay"]["accounts"][1]["ifsc"],
+            full_ifsc,
+        )
+        self.assertNotIn(full_upi, csv_texts["millerpay"])
+        self.assertNotIn(full_account_number, csv_texts["millerpay"])
+        self.assertNotIn(full_ifsc, csv_texts["millerpay"])
+        for secret in secret_values.values():
+            self.assertNotIn(secret, terminal)
+            self.assertNotIn(secret, aggregate_text)
+            for csv_text in csv_texts.values():
+                self.assertNotIn(secret, csv_text)
+
     def test_comprehensive_output_has_ranges_masked_terminal_accounts_and_full_json_accounts(self):
         orders = tuple(
             Order("atgpay", "A{}".format(index), amount)

@@ -130,6 +130,28 @@ class WalletQuotaCliTests(TestCase):
         self.assertIn("atgpay", errors)
         self.assertNotIn("do-not-print-password", errors)
 
+    def test_verbose_calls_atgpay_and_millerpay_without_printing_passwords(self):
+        self.env.write_text(
+            "ENABLED_PROVIDERS=atgpay,millerpay\n"
+            "ATGPAY_PASSWORD=atgpay-password\n"
+            "MILLERPAY_PASSWORD=millerpay-password\n",
+            encoding="utf-8",
+        )
+        atgpay = self.success_provider("atgpay")
+        millerpay = self.success_provider("millerpay")
+
+        code, output, errors = self.run_main(
+            (atgpay, millerpay), ("--verbose",)
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(atgpay.calls, 1)
+        self.assertEqual(millerpay.calls, 1)
+        self.assertIn("atgpay", errors)
+        self.assertIn("millerpay", errors)
+        self.assertNotIn("atgpay-password", output + errors)
+        self.assertNotIn("millerpay-password", output + errors)
+
     def test_parser_does_not_accept_secret_arguments(self):
         destinations = {action.dest for action in wallet_quota.build_parser()._actions}
 

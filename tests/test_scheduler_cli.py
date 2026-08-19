@@ -19,7 +19,9 @@ class SchedulerCliTests(TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.env_file = self.root / ".env"
-        self.env_file.write_text("ENABLED_PROVIDERS=atgpay\n", encoding="utf-8")
+        self.env_file.write_text(
+            "ENABLED_PROVIDERS=atgpay,millerpay\n", encoding="utf-8"
+        )
         self.report_directory = self.root / "reports"
         self.settings = SimpleNamespace(report_directory=self.report_directory)
 
@@ -35,6 +37,7 @@ class SchedulerCliTests(TestCase):
         stderr = io.StringIO()
         cleanup = mock.Mock(return_value=CleanupResult((), (), ()))
         captured = {}
+        original_env = self.env_file.read_text(encoding="utf-8")
 
         class FakeLock:
             def __enter__(self):
@@ -79,6 +82,7 @@ class SchedulerCliTests(TestCase):
         self.assertEqual(stdout.getvalue(), "Report cleanup: deleted 0, preserved 0\n")
         self.assertTrue(captured["locked"])
         self.assertTrue(captured["released"])
+        self.assertEqual(self.env_file.read_text(encoding="utf-8"), original_env)
 
     def test_cleanup_logging_omits_paths_and_prints_fixed_warnings(self):
         stdout = io.StringIO()

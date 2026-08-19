@@ -120,11 +120,11 @@ python3 atg_pool_report.py --sort-type 1 --order-type 4 --page-size 10
 ```text
 订单池综合报告
 ==========================================================
-状态: partial
+状态: success
 total:
-  渠道: 成功 1 / 部分 0 / 失败 1
-  订单数: 299
-  总金额: ₹160500
+  渠道: 成功 2 / 部分 0 / 失败 0
+  订单数: 419
+  总金额: ₹224500
 
 atgpay: success
   订单数: 299

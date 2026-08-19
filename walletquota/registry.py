@@ -3,6 +3,7 @@ from typing import Any, Callable, Mapping, Optional
 from .config import AppSettings, ConfigError
 from .models import ProviderResult
 from .providers.atgpay import AtgPayProvider
+from .providers.millerpay import MillerPayProvider
 
 
 ProviderFactory = Callable[[Mapping[str, str], Mapping[str, Any]], Any]
@@ -10,6 +11,9 @@ ProviderFactory = Callable[[Mapping[str, str], Mapping[str, Any]], Any]
 
 PROVIDER_FACTORIES: Mapping[str, ProviderFactory] = {
     "atgpay": lambda values, overrides: AtgPayProvider(
+        values, overrides=overrides
+    ),
+    "millerpay": lambda values, overrides: MillerPayProvider(
         values, overrides=overrides
     ),
 }

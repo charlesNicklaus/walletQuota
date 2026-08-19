@@ -2,6 +2,7 @@ from unittest import TestCase
 
 from walletquota.config import AppSettings, ConfigError
 from walletquota.models import ProviderResult
+from walletquota.providers.millerpay import MillerPayProvider
 from walletquota.registry import UnavailableProvider, build_providers
 
 
@@ -24,6 +25,24 @@ def factory(name):
 
 
 class RegistryTests(TestCase):
+    def test_default_registry_builds_atgpay_and_millerpay_in_configured_order(self):
+        settings = AppSettings.from_values(
+            {
+                "ENABLED_PROVIDERS": "millerpay,atgpay",
+                "MILLERPAY_PHONE": "miller-phone",
+                "MILLERPAY_PASSWORD": "miller-secret",
+                "ATGPAY_PHONE": "atg-phone",
+                "ATGPAY_PASSWORD": "atg-secret",
+            }
+        )
+
+        providers = build_providers(settings)
+
+        self.assertEqual(
+            [provider.name for provider in providers], ["millerpay", "atgpay"]
+        )
+        self.assertIsInstance(providers[0], MillerPayProvider)
+
     def test_builds_registered_providers_in_configured_order(self):
         settings = AppSettings.from_values(
             {"ENABLED_PROVIDERS": "xxxpay,atgpay", "SAFE": "value"}

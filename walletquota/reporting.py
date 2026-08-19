@@ -23,7 +23,16 @@ CSV_FIELDS = [
 ]
 
 _CREDENTIAL_ATTRIBUTE_NAMES = frozenset(
-    {"password", "token", "cookie", "session", "signature", "secret", "sign"}
+    {
+        "password",
+        "token",
+        "cookie",
+        "session",
+        "signature",
+        "authorization",
+        "secret",
+        "sign",
+    }
 )
 _CREDENTIAL_ATTRIBUTE_AFFIXES = (
     "password",

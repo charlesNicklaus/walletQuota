@@ -30,6 +30,11 @@ _CREDENTIAL_ATTRIBUTE_NAMES = frozenset(
         "session",
         "signature",
         "authorization",
+        "authheader",
+        "proxyauthorization",
+        "xauthorization",
+        "apikey",
+        "credential",
         "secret",
         "sign",
     }

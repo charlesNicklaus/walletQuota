@@ -312,3 +312,68 @@ class ReportBundleTests(TestCase):
             {"details": {"enabled": True}},
         )
         self.assertNotIn(SENTINEL, bundle.aggregate_json.read_text(encoding="utf-8"))
+
+    def test_normalized_authentication_keys_are_removed_recursively(self):
+        result = aggregate_fixture()
+        channel = result.channels[0]
+        sensitive_keys = (
+            "authHeader",
+            "Proxy-Authorization",
+            "X-Authorization",
+            "apiKey",
+            "credential",
+        )
+        protected = ProviderResult.success(
+            channel.provider,
+            (
+                Order(
+                    "atgpay",
+                    "normalized-auth-order",
+                    Decimal("1"),
+                    attributes={
+                        "nested": {key: SENTINEL for key in sensitive_keys},
+                        "credentialStatus": "available",
+                    },
+                ),
+            ),
+            {
+                "nested": {key: SENTINEL for key in sensitive_keys},
+                "authorizationStatus": "authenticated",
+            },
+            (
+                Account(
+                    "atgpay",
+                    "bound_upi",
+                    "normalized-auth-account",
+                    upi="alice123@paytm",
+                    attributes={
+                        "nested": {key: SENTINEL for key in sensitive_keys},
+                        "credentialStatus": "available",
+                    },
+                ),
+            ),
+        )
+        protected_result = aggregate_results(
+            (protected,) + result.channels[1:], NOW, NOW
+        )
+
+        bundle = write_report_bundle(protected_result, self.directory)
+        aggregate_text = bundle.aggregate_json.read_text(encoding="utf-8")
+        payload = json.loads(aggregate_text)
+        channel_payload = payload["channels"]["atgpay"]
+        csv_text = bundle.channel_csv["atgpay"].read_text(encoding="utf-8")
+
+        self.assertEqual(
+            channel_payload["metadata"],
+            {"nested": {}, "authorizationStatus": "authenticated"},
+        )
+        self.assertEqual(
+            channel_payload["orders"][0]["attributes"],
+            {"nested": {}, "credentialStatus": "available"},
+        )
+        self.assertEqual(
+            channel_payload["accounts"][0]["attributes"],
+            {"nested": {}, "credentialStatus": "available"},
+        )
+        self.assertNotIn(SENTINEL, aggregate_text)
+        self.assertNotIn(SENTINEL, csv_text)

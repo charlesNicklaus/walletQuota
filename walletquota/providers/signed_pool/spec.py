@@ -18,6 +18,7 @@ _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _TRUSTED_PROVIDER_HOSTS = {
     "atgpay": ("api.atg-game.com", "app-web.atg-game.com"),
     "millerpay": ("api.millerpay-app.com", "app-web.millerpay-app.com"),
+    "penguinpay": ("api.penguinpay-app.com", "app-web.penguinpay-app.com"),
 }
 
 

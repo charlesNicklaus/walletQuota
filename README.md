@@ -191,7 +191,7 @@ reports/20260812_153000/
 
 ATG Pay、MillerPay 和 PenguinPay 都读取完整订单池，并尽力从同样三类只读来源收集账户信息：已绑定 UPI、已绑定银行卡，以及“我的已领取任务”中的订单详情收款方。PenguinPay 账户来源：绑定 UPI、绑定银行卡、已领取订单详情。账户收集失败只会记录安全的警告，不会让已经完成的订单池快照变为失败。
 
-终端只显示掩码账户标识；订单 CSV 不包含账户信息；`penguinpay_orders.csv` 不包含账户字段。完整 UPI、银行卡号和 IFSC 仅会写入本机快照目录的 `aggregate.json`（例如 `channels.atgpay.accounts`、`channels.millerpay.accounts` 和 `channels.penguinpay.accounts`），因此该文件是敏感数据：不要上传、共享或提交到仓库；`channels.penguinpay.accounts` 可包含完整本机账户标识。`账户: 0` 只表示当前登录未返回账户，不表示渠道没有账户；同样地，它也不表示当前登录未返回已绑定账户或已领取订单账户，**不**表示该支付渠道或商户不存在收款账户。
+终端只显示掩码账户标识；订单 CSV 不包含账户信息；`penguinpay_orders.csv` 不包含账户字段。完整 UPI、银行卡号和 IFSC 仅会写入本机快照目录的 `aggregate.json`（例如 `channels.atgpay.accounts`、`channels.millerpay.accounts` 和 `channels.penguinpay.accounts`），因此该文件是敏感数据：不要上传、共享或提交到仓库；`channels.penguinpay.accounts` 可包含完整本机账户标识。`账户: 0` 只表示当前登录未返回账户，不表示渠道或商户没有账户。
 
 所有金额按 INR 汇总。跨渠道订单唯一键是“渠道名 + 订单号”，不同渠道相同订单号不会互相覆盖。
 

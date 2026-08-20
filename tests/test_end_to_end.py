@@ -133,6 +133,8 @@ class ComprehensiveOutputTests(unittest.TestCase):
         self.assertNotIn(full_account, terminal)
         self.assertNotIn(full_ifsc, terminal)
         self.assertNotIn(secret, terminal)
+        self.assertIn("收款 UPI: p***r@u***i", terminal)
+        self.assertIn("银行账户: ****1012 / HDFC / IFSC ****0456", terminal)
 
         with tempfile.TemporaryDirectory() as temporary:
             bundle = write_report_bundle(aggregate, Path(temporary))

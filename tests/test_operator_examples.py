@@ -39,24 +39,39 @@ class OperatorExampleTests(TestCase):
             with self.subTest(fact=fact):
                 self.assertIn(fact, readme)
 
-        for path in (
-            "/auth/login",
-            "/pay/debit/task",
-            "/user/upi/bind/list",
-            "/bank/debit/card/list",
-            "/pay/my/task",
-            "/pay/order/detail",
-        ):
-            with self.subTest(path=path):
-                self.assertIn("POST {}".format(path), readme)
+        self.assertNotIn(
+            "它也不表示当前登录未返回已绑定账户或已领取订单账户", readme
+        )
 
-        self.assertIn("永不调用", readme)
+        penguin_allowlist = readme.partition(
+            "PenguinPay 只允许调用：\n\n```text\n"
+        )[2].partition("\n```")[0]
+        self.assertEqual(
+            [
+                line
+                for line in penguin_allowlist.splitlines()
+                if line.startswith("POST ")
+            ],
+            [
+                "POST /auth/login",
+                "POST /pay/debit/task",
+                "POST /user/upi/bind/list",
+                "POST /bank/debit/card/list",
+                "POST /pay/my/task",
+                "POST /pay/order/detail",
+            ],
+        )
+
+        penguin_safety = readme.partition("PenguinPay 永不调用 ")[2].partition(
+            "\n\n"
+        )[0]
         for forbidden in (
             "/pay/receive/task",
             "/pay/submit/utr",
             "/pay/cancel/task",
             "/user/account/wallet",
             "/pay/debit/upis",
+            "付款、绑定、解绑、删除、更新或其他变更端点",
         ):
             with self.subTest(forbidden=forbidden):
-                self.assertIn(forbidden, readme)
+                self.assertIn(forbidden, penguin_safety)

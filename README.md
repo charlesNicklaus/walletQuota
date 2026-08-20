@@ -6,11 +6,12 @@
 total:    所有完整成功渠道的可信总计
 atgpay:   ATG Pay 的订单数、金额、金额分布或错误状态
 millerpay: MillerPay 的订单数、金额、金额分布或错误状态
+penguinpay: PenguinPay 的订单数、金额、金额分布或错误状态
 ```
 
 一个渠道失败不会影响其他渠道。失败和不完整渠道会保留在报告中，但不会混入 `total`。
 
-当前已接入 `atgpay` 和 `millerpay`；多渠道注册、并发、故障隔离和综合报告框架已经完成。工具只读取订单池，不会接单、付款、提交 UTR、绑卡或修改账户设置。
+当前已接入 `atgpay`、`millerpay` 和 `penguinpay`；多渠道注册、并发、故障隔离和综合报告框架已经完成。工具只读取订单池，不会接单、付款、提交 UTR、绑卡或修改账户设置。
 
 ## 环境要求
 
@@ -26,11 +27,13 @@ cp .env.example .env
 在 `.env` 中填写本地账号：
 
 ```dotenv
-ENABLED_PROVIDERS=atgpay,millerpay
+ENABLED_PROVIDERS=atgpay,millerpay,penguinpay
 ATGPAY_PHONE=你的印度手机号
 ATGPAY_PASSWORD=你的密码
 MILLERPAY_PHONE=你的印度手机号
 MILLERPAY_PASSWORD=你的密码
+PENGUINPAY_PHONE=你的印度手机号
+PENGUINPAY_PASSWORD=你的密码
 REPORT_DIRECTORY=reports
 ```
 
@@ -67,6 +70,25 @@ ENABLED_PROVIDERS=atgpay
 | `MILLERPAY_PAGE_SIZE` | `10` | 每页数量，`1–1000` |
 | `MILLERPAY_REQUEST_DELAY_MS` | `150` | 分页请求之间的等待毫秒数 |
 | `MILLERPAY_TIMEOUT_SECONDS` | `30` | 单次 HTTP 请求超时秒数 |
+
+### PenguinPay 配置
+
+PenguinPay API Base: https://api.penguinpay-app.com/app
+
+PenguinPay Web Origin: https://app-web.penguinpay-app.com
+
+PenguinPay 默认 sortType=1、orderType=1、pageSize=10。
+
+| 配置 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PENGUINPAY_PHONE` | 无 | 本地登录手机号，必填 |
+| `PENGUINPAY_PASSWORD` | 无 | 本地登录密码，必填 |
+| `PENGUINPAY_API_BASE` | `https://api.penguinpay-app.com/app` | API 基址，必须使用 HTTPS 且为受信任的 PenguinPay 主机 |
+| `PENGUINPAY_SORT_TYPE` | `1` | 排序类型；PenguinPay 默认 `sortType=1` |
+| `PENGUINPAY_ORDER_TYPE` | `1` | 订单池类型；PenguinPay 默认 `orderType=1` |
+| `PENGUINPAY_PAGE_SIZE` | `10` | 每页数量，`1–1000`；PenguinPay 默认 `pageSize=10` |
+| `PENGUINPAY_REQUEST_DELAY_MS` | `150` | 分页请求之间的等待毫秒数 |
+| `PENGUINPAY_TIMEOUT_SECONDS` | `30` | 单次 HTTP 请求超时秒数 |
 
 旧版 `ATG_PHONE`、`ATG_PASSWORD` 和其他 `ATG_*` 配置仍然兼容；同一个配置同时出现时，新的 `ATGPAY_*` 优先。报告根目录优先使用 `REPORT_DIRECTORY`，缺失时回退到旧 `ATG_REPORT_DIRECTORY`，也可以通过 `--output-dir` 临时覆盖。
 
@@ -139,6 +161,13 @@ millerpay: success
   金额分布:
     范围 100-10000 × 120（100%，小计 ₹64000）
     …（其余固定范围省略）
+
+penguinpay: success
+  订单数: 80
+  总金额: ₹40000
+  金额分布:
+    范围 100-10000 × 80（100%，小计 ₹40000）
+    …（其余固定范围省略）
 ```
 
 每次运行生成独立快照目录：
@@ -147,7 +176,8 @@ millerpay: success
 reports/20260812_153000/
 ├── aggregate.json
 ├── atgpay_orders.csv
-└── millerpay_orders.csv
+├── millerpay_orders.csv
+└── penguinpay_orders.csv
 ```
 
 - `aggregate.json` 包含顶层 `total`、全部渠道状态、摘要、金额分布、元数据和订单。
@@ -159,9 +189,9 @@ reports/20260812_153000/
 
 ### 收款账户与敏感输出
 
-ATG Pay 和 MillerPay 都读取完整订单池，并尽力从同样三类只读来源收集账户信息：已绑定 UPI、已绑定银行卡，以及“我的已领取任务”中的订单详情收款方。账户收集失败只会记录安全的警告，不会让已经完成的订单池快照变为失败。
+ATG Pay、MillerPay 和 PenguinPay 都读取完整订单池，并尽力从同样三类只读来源收集账户信息：已绑定 UPI、已绑定银行卡，以及“我的已领取任务”中的订单详情收款方。PenguinPay 账户来源：绑定 UPI、绑定银行卡、已领取订单详情。账户收集失败只会记录安全的警告，不会让已经完成的订单池快照变为失败。
 
-终端只显示掩码账户标识；订单 CSV 不包含账户信息。完整 UPI、银行卡号和 IFSC 仅会写入本机快照目录的 `aggregate.json`（例如 `channels.atgpay.accounts` 和 `channels.millerpay.accounts`），因此该文件是敏感数据：不要上传、共享或提交到仓库。`账户: 0` 只表示当前登录未返回已绑定账户或已领取订单账户，**不**表示该支付渠道或商户不存在收款账户。
+终端只显示掩码账户标识；订单 CSV 不包含账户信息；`penguinpay_orders.csv` 不包含账户字段。完整 UPI、银行卡号和 IFSC 仅会写入本机快照目录的 `aggregate.json`（例如 `channels.atgpay.accounts`、`channels.millerpay.accounts` 和 `channels.penguinpay.accounts`），因此该文件是敏感数据：不要上传、共享或提交到仓库；`channels.penguinpay.accounts` 可包含完整本机账户标识。`账户: 0` 只表示当前登录未返回账户，不表示渠道没有账户；同样地，它也不表示当前登录未返回已绑定账户或已领取订单账户，**不**表示该支付渠道或商户不存在收款账户。
 
 所有金额按 INR 汇总。跨渠道订单唯一键是“渠道名 + 订单号”，不同渠道相同订单号不会互相覆盖。
 
@@ -201,7 +231,7 @@ python3 -m unittest discover -s tests -v
 
 - 凭据只从本地 `.env` 读取，不提供密码命令行参数。
 - 报告和日志不会写入密码、Token、Session Key、Cookie、签名或原始认证响应。
-- 每个 Provider 只允许访问其显式列出的 HTTPS 主机和只读接口；ATG 基址固定为 `https://api.atg-game.com/app`，MillerPay 基址固定为 `https://api.millerpay-app.com/app`，Web Origin 为 `https://app-web.millerpay-app.com`。
+- 每个 Provider 只允许访问其显式列出的 HTTPS 主机和只读接口；ATG 基址固定为 `https://api.atg-game.com/app`，MillerPay 基址固定为 `https://api.millerpay-app.com/app`，Web Origin 为 `https://app-web.millerpay-app.com`；PenguinPay API Base 为 `https://api.penguinpay-app.com/app`，Web Origin 为 `https://app-web.penguinpay-app.com`。
 - ATG Pay 只允许调用：
 
 ```text
@@ -224,4 +254,17 @@ POST /pay/my/task
 POST /pay/order/detail
 ```
 
-两个渠道只读取订单与账户信息，绝不会调用 `/pay/receive/task`，也不会认领、接取或锁定订单、付款、提交 UTR、绑卡、删除、更新或修改账户设置。程序不会绕过 Cloudflare、验证码、登录或访问控制。服务端修改接口或签名规则时会安全失败，不会猜测或调用其他端点。
+PenguinPay 只允许调用：
+
+```text
+POST /auth/login
+POST /pay/debit/task
+POST /user/upi/bind/list
+POST /bank/debit/card/list
+POST /pay/my/task
+POST /pay/order/detail
+```
+
+三个渠道只读取订单与账户信息，绝不会调用 `/pay/receive/task`，也不会认领、接取或锁定订单、付款、提交 UTR、绑卡、删除、更新或修改账户设置。程序不会绕过 Cloudflare、验证码、登录或访问控制。服务端修改接口或签名规则时会安全失败，不会猜测或调用其他端点。
+
+PenguinPay 永不调用 `/pay/receive/task`、`/pay/submit/utr`、`/pay/cancel/task`、`/user/account/wallet`、`/pay/debit/upis`，也永不调用付款、绑定、解绑、删除、更新或其他变更端点。

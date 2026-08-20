@@ -20,7 +20,7 @@ class SchedulerCliTests(TestCase):
         self.root = Path(self.temporary.name)
         self.env_file = self.root / ".env"
         self.env_file.write_text(
-            "ENABLED_PROVIDERS=atgpay,millerpay\n", encoding="utf-8"
+            "ENABLED_PROVIDERS=atgpay,millerpay,penguinpay\n", encoding="utf-8"
         )
         self.report_directory = self.root / "reports"
         self.settings = SimpleNamespace(report_directory=self.report_directory)

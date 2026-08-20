@@ -56,6 +56,103 @@ class ConfirmedResponseContractTests(unittest.TestCase):
 
 
 class ComprehensiveOutputTests(unittest.TestCase):
+    def test_three_channels_report_ranges_accounts_and_secrets_safely(self):
+        secret = "penguin-session-secret-sentinel"
+        penguin_orders = tuple(
+            Order(
+                "penguinpay",
+                "P{}".format(index),
+                amount,
+                attributes={"sessionKey": secret, "safe": "kept"},
+            )
+            for index, amount in enumerate(
+                (
+                    Decimal("99.99"),
+                    Decimal("100"),
+                    Decimal("10000"),
+                    Decimal("20000"),
+                    Decimal("50000.01"),
+                ),
+                start=1,
+            )
+        )
+        full_upi = "penguin.collector@upi"
+        full_account = "987654321012"
+        full_ifsc = "HDFC0000456"
+        channels = (
+            ProviderResult.success(
+                "atgpay", (Order("atgpay", "A1", Decimal("1")),), {}
+            ),
+            ProviderResult.success(
+                "millerpay", (Order("millerpay", "M1", Decimal("2")),), {}
+            ),
+            ProviderResult.success(
+                "penguinpay",
+                penguin_orders,
+                {"credential": secret, "safe": "kept"},
+                (
+                    Account(
+                        "penguinpay",
+                        "bound_upi",
+                        "penguin-upi",
+                        upi=full_upi,
+                        attributes={"authorization": secret},
+                    ),
+                    Account(
+                        "penguinpay",
+                        "bank_account",
+                        "penguin-bank",
+                        account=full_account,
+                        bank_name="HDFC",
+                        ifsc=full_ifsc,
+                        attributes={"apiKey": secret},
+                    ),
+                ),
+            ),
+        )
+        now = datetime(2026, 8, 20, 8, 0, tzinfo=timezone.utc)
+        aggregate = aggregate_results(channels, now, now)
+        terminal = format_terminal_report(aggregate)
+
+        self.assertLess(terminal.index("atgpay:"), terminal.index("millerpay:"))
+        self.assertLess(terminal.index("millerpay:"), terminal.index("penguinpay:"))
+        self.assertEqual(
+            [
+                (row["label"], row["count"])
+                for row in summarize_orders(penguin_orders)["amount_distribution"]
+            ],
+            [
+                ("<100", 1),
+                ("100-10000", 1),
+                ("10000-20000", 1),
+                ("20000-50000", 1),
+                (">50000", 1),
+            ],
+        )
+        self.assertNotIn(full_upi, terminal)
+        self.assertNotIn(full_account, terminal)
+        self.assertNotIn(full_ifsc, terminal)
+        self.assertNotIn(secret, terminal)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            bundle = write_report_bundle(aggregate, Path(temporary))
+            aggregate_text = bundle.aggregate_json.read_text(encoding="utf-8")
+            payload = json.loads(aggregate_text)
+            penguin_csv = bundle.channel_csv["penguinpay"].read_text(encoding="utf-8")
+
+        self.assertEqual(
+            set(bundle.channel_csv), {"atgpay", "millerpay", "penguinpay"}
+        )
+        accounts = payload["channels"]["penguinpay"]["accounts"]
+        self.assertEqual(accounts[0]["upi"], full_upi)
+        self.assertEqual(accounts[1]["account"], full_account)
+        self.assertEqual(accounts[1]["ifsc"], full_ifsc)
+        self.assertNotIn(full_upi, penguin_csv)
+        self.assertNotIn(full_account, penguin_csv)
+        self.assertNotIn(full_ifsc, penguin_csv)
+        self.assertNotIn(secret, aggregate_text)
+        self.assertNotIn(secret, penguin_csv)
+
     def test_two_channels_keep_full_accounts_local_and_remove_nested_secrets(self):
         secret_values = {
             "password": "miller-password-sentinel",

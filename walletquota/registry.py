@@ -4,6 +4,7 @@ from .config import AppSettings, ConfigError
 from .models import ProviderResult
 from .providers.atgpay import AtgPayProvider
 from .providers.millerpay import MillerPayProvider
+from .providers.penguinpay import PenguinPayProvider
 
 
 ProviderFactory = Callable[[Mapping[str, str], Mapping[str, Any]], Any]
@@ -14,6 +15,9 @@ PROVIDER_FACTORIES: Mapping[str, ProviderFactory] = {
         values, overrides=overrides
     ),
     "millerpay": lambda values, overrides: MillerPayProvider(
+        values, overrides=overrides
+    ),
+    "penguinpay": lambda values, overrides: PenguinPayProvider(
         values, overrides=overrides
     ),
 }

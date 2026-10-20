@@ -135,6 +135,32 @@ python3 wallet_quota.py --verbose
 python3 atg_pool_report.py --sort-type 1 --order-type 4 --page-size 10
 ```
 
+### HOYO PAY 独立抓取
+
+已注册的 HOYO PAY 账号可使用独立脚本。先在本地 `.env` 填写 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`，然后运行：
+
+```bash
+python3 scripts/hoyopay_readonly.py --env-file .env --output reports/hoyopay-result.json
+```
+
+脚本读取 Low Amount（`orderType=1`）和 High Amount（`orderType=2`）的全部分页，跨池按订单号去重；同一订单的数据冲突或任一池不完整时，结果标为 `partial`。账户信息同样只从已绑定 UPI、已绑定银行卡及已领取订单详情收集。结果 JSON 以本机文件权限 `0600` 写入，包含完整账户信息时应作为敏感文件保管。
+
+HOYO PAY 使用固定的 `https://api.hoyopay-app.com/app` API 和只读端点；脚本只登录、读取，不注册账号、发送短信、接单或付款。它尚未注册到多渠道 Runner，不要把 `hoyopay` 加入 `ENABLED_PROVIDERS`。成功退出码为 `0`，不完整为 `3`，配置或运行错误为 `1`。
+
+### 离线合并已保存快照
+
+标准 `aggregate.json` 和独立 HOYO PAY 结果可以合并为新的标准报告目录。把下面的输入路径换成实际报告路径：
+
+```bash
+python3 scripts/merge_wallet_reports.py \
+  path/to/aggregate.json path/to/hoyopay-result.json \
+  --output-dir reports
+```
+
+合并工具不联网，不修改输入文件；金额从逐笔订单重新计算，只有完整成功渠道计入可信总计。同一渠道重复出现时会拒绝合并，避免把两个时间点的订单池重复累加。各渠道原始时间和元数据会保留，报告的时间范围覆盖最早开始至最晚结束；不同时间采集的快照不代表同时余额。
+
+订单池实时变化可能使跨页快照不完整。MillerPay 和 PenguinPay 的本地 `*_PAGE_SIZE` 可在配置允许的范围内调大，以减少翻页次数；是否完整仍以实际返回数据和完整性校验为准。
+
 ## 综合输出
 
 终端先显示 `total`，再按配置顺序显示各渠道。为便于阅读，下面的示例省略了 `total` 和每个渠道的部分金额分布行；实际输出会完整显示五个固定范围。

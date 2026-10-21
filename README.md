@@ -129,6 +129,29 @@ python3 wallet_quota.py --verbose
 
 定时器不会补跑错过的时间点，也不会让查询重叠；退出后需要由人手动重启。它委托给同一条手动查询命令及同一份 `--env-file`，没有 Codex、cron、launchd 或开机自启动集成。所有历史报告持续保留；启动和跨日均不自动删除报告。
 
+### Mac Studio 持续抓取并自动入库
+
+PostgreSQL migration 执行完成后，在本地 `.env` 配置各渠道账号，以及 `PGDATABASE=walletquota`。`ENABLED_PROVIDERS` 控制 ATG、Miller、Penguin；启动脚本额外启用 Hoyo，读取 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`。某渠道配置或采集失败时，其余渠道继续运行，失败及不完整渠道不计入可信总计。
+
+```bash
+./start.sh
+tail -f reports/continuous.log
+```
+
+脚本从任意工作目录都可启动，会进入项目目录、脱离终端并显示实际采集进程 PID；日志权限为 `0600`。进程启动信息不代表首轮抓取或数据库导入已成功，应查看日志中的渠道状态、`imported` 和 `pending`。首次立即抓取，之后沿用 IST 每小时 `:00`、`:20`、`:40` 的调度；同一报告目录的进程锁避免重复采集。Mac 上存在 `caffeinate` 时会在进程存活期间阻止空闲睡眠。
+
+每轮保存新的 `aggregate.json`、订单 CSV 和 `postgres.data.sql`，然后通过本机 `psql` 自动导入。数据库不可用时保留 `postgres.pending`；后续周期先完成新抓取，再按时间顺序重试待导入批次。导入成功后仅将标记改为 `postgres.imported`，历史报告和 SQL 持续保留。同一报告重复导入不会重复增加数据库记录。
+
+数据库连接可以使用当前终端的标准 PostgreSQL 环境变量，也可在 `.env` 设置 `PGDATABASE`、`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSFILE`、`PGSERVICE`、`PGSERVICEFILE`、`PGSSLMODE` 或本地 `PGPASSWORD`。密码不放入命令行；后台导入不交互询问密码。使用与手工 `psql` 相同的本机连接设置即可。
+
+前台运行并用 Ctrl+C 停止：
+
+```bash
+./start.sh --foreground
+```
+
+后台模式可对启动时显示的采集进程 PID 执行 `kill -TERM 实际PID`。关闭终端不会停止后台采集；重启机器后需重新启动。仅执行一次抓取和自动入库时可运行 `python3 wallet_quota_pipeline.py --include-hoyo --verbose`。
+
 旧 ATG 专用入口仍然可用。它只运行 `atgpay`，并保留原有筛选参数：
 
 ```bash

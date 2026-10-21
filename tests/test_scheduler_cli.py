@@ -34,7 +34,7 @@ class SchedulerCliTests(TestCase):
             action.dest for action in wallet_quota_scheduler.build_parser()._actions
         }
 
-        self.assertEqual(destinations, {"help", "env_file", "output_dir", "verbose"})
+        self.assertEqual(destinations, {"help", "env_file", "output_dir", "verbose", "postgres", "include_hoyo"})
 
     def test_wires_resolved_query_arguments(self):
         stdout = io.StringIO()

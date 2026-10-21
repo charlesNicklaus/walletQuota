@@ -24,6 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--postgres", action="store_true", help="Import each saved snapshot into PostgreSQL")
+    parser.add_argument("--include-hoyo", action="store_true", help="Include Hoyo in PostgreSQL mode")
     return parser
 
 
@@ -35,7 +37,10 @@ def main(
     if threading.current_thread() is not threading.main_thread():
         print("Scheduler setup failed", file=stderr)
         return 1
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.include_hoyo and not args.postgres:
+        parser.error("--include-hoyo requires --postgres")
     try:
         settings = AppSettings.load(args.env_file, output_dir=args.output_dir)
     except ConfigError:
@@ -59,6 +64,13 @@ def main(
     if args.verbose:
         query_args.append("--verbose")
 
+    def query():
+        if args.postgres:
+            from wallet_quota_pipeline import main as pipeline_main
+            pipeline_args = query_args + (["--include-hoyo"] if args.include_hoyo else [])
+            return pipeline_main(pipeline_args, stdout, stderr)
+        return wallet_quota.main(query_args, stdout, stderr)
+
     previous_handler = None
     installed_handler = False
 
@@ -73,7 +85,7 @@ def main(
                 installed_handler = True
             scheduler = StandaloneScheduler(
                 report_directory,
-                lambda: wallet_quota.main(query_args, stdout, stderr),
+                query,
                 lambda: datetime.now(IST),
                 stdout=stdout,
                 stderr=stderr,

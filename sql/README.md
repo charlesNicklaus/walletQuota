@@ -48,4 +48,6 @@ ORDER BY finished_at DESC
 LIMIT 10;
 ```
 
-账户数据可能包含未脱敏的银行卡号和 UPI。生成的 SQL 与原始报告应保留在本机被 Git 忽略的 `reports/` 目录，勿提交到仓库。这里没有自动连接、定时导入、过期清理或级联删除配置。
+账户数据可能包含未脱敏的银行卡号和 UPI。生成的 SQL 与原始报告应保留在本机被 Git 忽略的 `reports/` 目录，勿提交到仓库。上述导出命令只生成文件；需要持续抓取并自动导入时，配置 `.env` 中的渠道账号和 `PGDATABASE=walletquota`，然后执行项目根目录的 `./start.sh`。具体启动、日志和停止命令见 [项目说明](../README.md#mac-studio-持续抓取并自动入库)。
+
+持续模式每轮保存报告和 SQL，在写完 SQL 后创建带校验值的 `postgres.pending` 标记，再用非交互式 `psql -X -w -v ON_ERROR_STOP=1` 导入。连接参数通过环境变量传递，不放在命令行中。失败时保留待导入标记并在下轮重试，成功后改为 `postgres.imported`。报告、导入 SQL 和历史数据库记录持续保留；没有过期清理或级联删除配置。

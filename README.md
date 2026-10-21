@@ -140,7 +140,7 @@ tail -f reports/continuous.log
 
 脚本从任意工作目录都可启动，会进入项目目录、脱离终端并显示实际采集进程 PID；日志权限为 `0600`。进程启动信息不代表首轮抓取或数据库导入已成功，应查看日志中的渠道状态、`imported` 和 `pending`。首次立即抓取，之后沿用 IST 每小时 `:00`、`:20`、`:40` 的调度；同一报告目录的进程锁避免重复采集。Mac 上存在 `caffeinate` 时会在进程存活期间阻止空闲睡眠。
 
-每轮报告文件名都带快照目录的本机时间戳，例如 `aggregate_20260812_160000.json`、`penguinpay_orders_20260812_160000.csv` 和 `postgres_20260812_160000.data.sql`，然后通过本机 `psql` 自动导入。数据库不可用时保留 `postgres_20260812_160000.pending`；后续周期先完成新抓取，再按时间顺序重试待导入批次。导入成功后仅将标记后缀改为 `.imported`，历史报告和 SQL 持续保留。旧版 `postgres.pending` 和 `postgres.data.sql` 批次仍可自动补导。同一报告重复导入不会重复增加数据库记录。`reports/continuous.log` 是整个后台进程的持续日志，保留固定文件名。
+每轮报告文件名都带快照目录的北京时间戳（Asia/Shanghai，UTC+8），例如 `aggregate_20260812_160000.json`、`penguinpay_orders_20260812_160000.csv` 和 `postgres_20260812_160000.data.sql`，然后通过本机 `psql` 自动导入。数据库不可用时保留 `postgres_20260812_160000.pending`；后续周期先完成新抓取，再按时间顺序重试待导入批次。导入成功后仅将标记后缀改为 `.imported`，历史报告和 SQL 持续保留。旧版 `postgres.pending` 和 `postgres.data.sql` 批次仍可自动补导。同一报告重复导入不会重复增加数据库记录。`reports/continuous.log` 是整个后台进程的持续日志，保留固定文件名。
 
 数据库连接可以使用当前终端的标准 PostgreSQL 环境变量，也可在 `.env` 设置 `PGDATABASE`、`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSFILE`、`PGSERVICE`、`PGSERVICEFILE`、`PGSSLMODE` 或本地 `PGPASSWORD`。密码不放入命令行；后台导入不交互询问密码。使用与手工 `psql` 相同的本机连接设置即可。
 
@@ -231,7 +231,7 @@ penguinpay: success
     …（其余固定范围省略）
 ```
 
-每次运行生成独立快照目录，目录和文件名都带本机时间戳（Mac Studio 设置为新加坡时区时使用新加坡时间）：
+每次运行生成独立快照目录，目录和文件名统一使用北京时间（Asia/Shanghai，UTC+8），不受运行机器的系统时区影响：
 
 ```text
 reports/20260812_160000/

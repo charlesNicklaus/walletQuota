@@ -7,6 +7,7 @@ from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, Mapping, Optional
+from zoneinfo import ZoneInfo
 
 from .models import Account, AggregateResult, Order, ProviderResult
 from .summary import summarize_orders
@@ -283,8 +284,10 @@ class ReportBundle:
 
 
 def write_report_bundle(result: AggregateResult, directory: Path) -> ReportBundle:
-    local_stamp = result.finished_at.astimezone().strftime("%Y%m%d_%H%M%S")
-    bundle_directory = _reserve_directory(Path(directory), local_stamp)
+    beijing_stamp = result.finished_at.astimezone(
+        ZoneInfo("Asia/Shanghai")
+    ).strftime("%Y%m%d_%H%M%S")
+    bundle_directory = _reserve_directory(Path(directory), beijing_stamp)
     file_stamp = bundle_directory.name
     aggregate_json = bundle_directory / "aggregate_{}.json".format(file_stamp)
     channel_csv: Dict[str, Path] = {}

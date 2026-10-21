@@ -1,10 +1,13 @@
 import csv
 import json
+import os
 import tempfile
+import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from unittest import TestCase
+from unittest import TestCase, mock, skipUnless
 
 from walletquota.aggregate import aggregate_results
 from walletquota.models import Account, Order, ProviderResult
@@ -90,6 +93,29 @@ class ReportBundleTests(TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
+
+    @skipUnless(hasattr(time, "tzset"), "Host timezone controls are unavailable")
+    def test_report_names_use_beijing_time_across_host_timezones_and_midnight(self):
+        result = replace(
+            aggregate_fixture(),
+            finished_at=datetime(2026, 10, 21, 18, 30, 45, tzinfo=timezone.utc),
+        )
+        for index, host_zone in enumerate(("UTC", "America/Los_Angeles")):
+            with self.subTest(host_zone=host_zone):
+                try:
+                    with mock.patch.dict(os.environ, {"TZ": host_zone}):
+                        time.tzset()
+                        bundle = write_report_bundle(result, self.directory / str(index))
+                        self.assertEqual(bundle.directory.name, "20261022_023045")
+                        self.assertEqual(
+                            bundle.aggregate_json.name, "aggregate_20261022_023045.json"
+                        )
+                        for provider, path in bundle.channel_csv.items():
+                            self.assertEqual(
+                                path.name, "{}_orders_20261022_023045.csv".format(provider)
+                            )
+                finally:
+                    time.tzset()
 
     def test_writes_aggregate_json_and_nonempty_channel_csv_files(self):
         bundle = write_report_bundle(aggregate_fixture(), self.directory)

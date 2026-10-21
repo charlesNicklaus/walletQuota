@@ -73,7 +73,6 @@ class StandaloneScheduler:
         self,
         report_directory: Path,
         query: Callable[[], int],
-        cleanup: Callable,
         clock: Callable[[], datetime],
         wait: Callable[[datetime], bool] = _wait_until,
         stdout: Optional[TextIO] = None,
@@ -81,18 +80,11 @@ class StandaloneScheduler:
     ) -> None:
         self.report_directory = Path(report_directory)
         self.query = query
-        self.cleanup = cleanup
         self.clock = clock
         self.wait = wait
         self.stdout = stdout
         self.stderr = stderr
         self.query_exit_codes: Tuple[int, ...] = ()
-
-    def _today_ist(self):
-        now = self.clock()
-        if now.tzinfo is None or now.utcoffset() is None:
-            raise ValueError("Scheduler clock must return timezone-aware datetimes")
-        return now.astimezone(IST).date()
 
     def _query_once(self) -> None:
         try:
@@ -104,17 +96,6 @@ class StandaloneScheduler:
                 self.stderr.write("Scheduled query failed\n")
             return
         self.query_exit_codes += (exit_code,)
-
-    def _cleanup_once(self, today) -> bool:
-        try:
-            self.cleanup(today)
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception:
-            if self.stderr is not None:
-                self.stderr.write("Scheduled cleanup failed\n")
-            return False
-        return True
 
     def _log_startup(self) -> None:
         if self.stdout is not None:
@@ -130,8 +111,6 @@ class StandaloneScheduler:
 
     def run(self) -> None:
         self._log_startup()
-        today_ist = self._today_ist()
-        last_cleaned_date = today_ist if self._cleanup_once(today_ist) else None
         self._query_once()
 
         while True:
@@ -139,8 +118,4 @@ class StandaloneScheduler:
             self._log_next_run(target)
             if not self.wait(target):
                 return
-            today_ist = self._today_ist()
-            if today_ist != last_cleaned_date:
-                if self._cleanup_once(today_ist):
-                    last_cleaned_date = today_ist
             self._query_once()

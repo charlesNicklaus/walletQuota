@@ -2,15 +2,19 @@ import io
 import json
 import signal
 import tempfile
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import TestCase, mock
 
 import wallet_quota_scheduler
 from walletquota.config import ConfigError
-from walletquota.retention import CleanupResult
-from walletquota.scheduler import IST, SchedulerAlreadyRunning, StandaloneScheduler
+from walletquota.scheduler import (
+    IST,
+    SchedulerAlreadyRunning,
+    SchedulerLock,
+    StandaloneScheduler,
+)
 
 
 class SchedulerCliTests(TestCase):
@@ -32,10 +36,9 @@ class SchedulerCliTests(TestCase):
 
         self.assertEqual(destinations, {"help", "env_file", "output_dir", "verbose"})
 
-    def test_wires_resolved_query_arguments_and_cleanup(self):
+    def test_wires_resolved_query_arguments(self):
         stdout = io.StringIO()
         stderr = io.StringIO()
-        cleanup = mock.Mock(return_value=CleanupResult((), (), ()))
         captured = {}
         original_env = self.env_file.read_text(encoding="utf-8")
 
@@ -48,21 +51,19 @@ class SchedulerCliTests(TestCase):
                 captured["released"] = True
 
         class FakeScheduler:
-            def __init__(self, report_directory, query, cleanup_callback, clock, **unused):
+            def __init__(self, report_directory, query, clock, **unused):
                 captured["report_directory"] = report_directory
                 captured["query"] = query
-                captured["cleanup"] = cleanup_callback
                 captured["clock"] = clock
 
             def run(self):
-                captured["cleanup"](date(2026, 8, 12))
                 captured["query"]()
 
         with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=self.settings) as load, mock.patch.object(
             wallet_quota_scheduler.SchedulerLock, "acquire", return_value=FakeLock()
         ), mock.patch.object(wallet_quota_scheduler, "StandaloneScheduler", FakeScheduler), mock.patch.object(
-            wallet_quota_scheduler, "cleanup_expired_reports", cleanup
-        ), mock.patch.object(wallet_quota_scheduler.wallet_quota, "main", return_value=3) as query:
+            wallet_quota_scheduler.wallet_quota, "main", return_value=3
+        ) as query:
             result = wallet_quota_scheduler.main(
                 ["--env-file", str(self.env_file), "--output-dir", str(self.root / "chosen"), "--verbose"],
                 stdout,
@@ -78,21 +79,10 @@ class SchedulerCliTests(TestCase):
             stdout,
             stderr,
         )
-        cleanup.assert_called_once_with(frozen_root, date(2026, 8, 12))
-        self.assertEqual(stdout.getvalue(), "Report cleanup: deleted 0, preserved 0\n")
+        self.assertEqual(stdout.getvalue(), "")
         self.assertTrue(captured["locked"])
         self.assertTrue(captured["released"])
         self.assertEqual(self.env_file.read_text(encoding="utf-8"), original_env)
-
-    def test_cleanup_logging_omits_paths_and_prints_fixed_warnings(self):
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        result = CleanupResult((), (), ("Unrecognized report directory preserved",))
-
-        wallet_quota_scheduler._log_cleanup(result, stdout, stderr)
-
-        self.assertEqual(stdout.getvalue(), "Report cleanup: deleted 0, preserved 0\n")
-        self.assertEqual(stderr.getvalue(), "Unrecognized report directory preserved\n")
 
     def test_configuration_failure_is_safe_and_happens_before_lock(self):
         stderr = io.StringIO()
@@ -225,6 +215,26 @@ class SchedulerCliTests(TestCase):
         self.assertEqual(signal_call.call_args_list[-1].args, (signal.SIGTERM, previous))
         self.assertEqual(stderr.getvalue(), "")
 
+    def test_keyboard_interrupt_stops_cleanly_and_releases_lock(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        previous_handler = signal.getsignal(signal.SIGTERM)
+
+        with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=self.settings), mock.patch.object(
+            wallet_quota_scheduler.wallet_quota, "main", side_effect=KeyboardInterrupt
+        ) as query:
+            result = wallet_quota_scheduler.main(
+                ["--env-file", str(self.env_file)], stdout, stderr
+            )
+
+        self.assertEqual(result, 0)
+        query.assert_called_once()
+        with SchedulerLock.acquire(self.report_directory):
+            pass
+        self.assertIs(signal.getsignal(signal.SIGTERM), previous_handler)
+        self.assertEqual(stdout.getvalue(), "Scheduler started\n")
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_freezes_report_root_when_env_directory_changes_after_startup(self):
         original_root = self.root / "original-reports"
         changed_root = self.root / "changed-reports"
@@ -235,7 +245,6 @@ class SchedulerCliTests(TestCase):
             encoding="utf-8",
         )
         settings = SimpleNamespace(report_directory=original_root)
-        cleanup_roots = []
         query_calls = []
         captured = {}
         env_file = self.env_file
@@ -248,26 +257,21 @@ class SchedulerCliTests(TestCase):
                 return None
 
         class FakeScheduler:
-            def __init__(self, report_root, query, cleanup, clock, **unused):
+            def __init__(self, report_root, query, clock, **unused):
                 captured["report_root"] = report_root
                 captured["query"] = query
-                captured["cleanup"] = cleanup
 
             def run(self):
-                captured["cleanup"](date(2026, 8, 12))
                 env_file.write_text(
                     "ENABLED_PROVIDERS=atgpay\nREPORT_DIRECTORY={}\n".format(changed_root),
                     encoding="utf-8",
                 )
                 captured["query"]()
-                captured["cleanup"](date(2026, 8, 12))
                 captured["query"]()
 
         with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=settings), mock.patch.object(
             wallet_quota_scheduler.SchedulerLock, "acquire", return_value=FakeLock()
         ) as acquire, mock.patch.object(wallet_quota_scheduler, "StandaloneScheduler", FakeScheduler), mock.patch.object(
-            wallet_quota_scheduler, "cleanup_expired_reports", side_effect=lambda root, today: cleanup_roots.append(root) or CleanupResult((), (), ())
-        ), mock.patch.object(
             wallet_quota_scheduler.wallet_quota, "main", side_effect=lambda args, stdout, stderr: query_calls.append(args) or 0
         ):
             result = wallet_quota_scheduler.main(["--env-file", str(self.env_file)], io.StringIO(), io.StringIO())
@@ -276,7 +280,6 @@ class SchedulerCliTests(TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(acquire.call_args.args, (frozen_root,))
         self.assertEqual(captured["report_root"], frozen_root)
-        self.assertEqual(cleanup_roots, [frozen_root, frozen_root])
         self.assertEqual(
             query_calls,
             [
@@ -293,7 +296,6 @@ class SchedulerCliTests(TestCase):
         alias = self.root / "reports-link"
         alias.symlink_to(original_root, target_is_directory=True)
         settings = SimpleNamespace(report_directory=alias)
-        cleanup_roots = []
         query_calls = []
         captured = {}
 
@@ -305,23 +307,18 @@ class SchedulerCliTests(TestCase):
                 return None
 
         class FakeScheduler:
-            def __init__(self, report_root, query, cleanup, clock, **unused):
+            def __init__(self, report_root, query, clock, **unused):
                 captured["report_root"] = report_root
                 captured["query"] = query
-                captured["cleanup"] = cleanup
 
             def run(self):
-                captured["cleanup"](date(2026, 8, 12))
                 alias.unlink()
                 alias.symlink_to(replacement_root, target_is_directory=True)
-                captured["cleanup"](date(2026, 8, 12))
                 captured["query"]()
 
         with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=settings), mock.patch.object(
             wallet_quota_scheduler.SchedulerLock, "acquire", return_value=FakeLock()
         ) as acquire, mock.patch.object(wallet_quota_scheduler, "StandaloneScheduler", FakeScheduler), mock.patch.object(
-            wallet_quota_scheduler, "cleanup_expired_reports", side_effect=lambda root, today: cleanup_roots.append(root) or CleanupResult((), (), ())
-        ), mock.patch.object(
             wallet_quota_scheduler.wallet_quota, "main", side_effect=lambda args, stdout, stderr: query_calls.append(args) or 0
         ):
             result = wallet_quota_scheduler.main(["--env-file", str(self.env_file)], io.StringIO(), io.StringIO())
@@ -330,13 +327,12 @@ class SchedulerCliTests(TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(acquire.call_args.args, (frozen_root,))
         self.assertEqual(captured["report_root"], frozen_root)
-        self.assertEqual(cleanup_roots, [frozen_root, frozen_root])
         self.assertEqual(
             query_calls,
             [["--env-file", str(self.env_file), "--output-dir", str(frozen_root)]],
         )
 
-    def test_local_bounded_integration_keeps_outside_sentinel(self):
+    def test_local_bounded_integration_preserves_reports_at_startup_and_midnight(self):
         report_directory = self.root / "reports"
         report_directory.mkdir()
         sentinel = self.root / "outside-sentinel"
@@ -371,25 +367,35 @@ class SchedulerCliTests(TestCase):
         )
         unknown = report_directory / "unknown-child"
         unknown.mkdir()
+        original_reports = {
+            path: path.read_bytes()
+            for directory in (expired, current)
+            for path in directory.iterdir()
+        }
         settings = SimpleNamespace(report_directory=report_directory)
         query_calls = []
+        reports_at_query = []
         stdout = io.StringIO()
         stderr = io.StringIO()
 
+        def query(*args):
+            query_calls.append(args)
+            reports_at_query.append(
+                {path: path.read_bytes() for path in original_reports if path.exists()}
+            )
+            return 0
+
         class BoundedScheduler:
-            def __init__(self, report_root, query, cleanup_callback, clock, **unused):
+            def __init__(self, report_root, query, clock, **unused):
                 times = iter(
                     (
-                        datetime(2026, 8, 12, 12, 0, tzinfo=IST),
-                        datetime(2026, 8, 12, 12, 1, tzinfo=IST),
-                        datetime(2026, 8, 12, 12, 20, tzinfo=IST),
-                        datetime(2026, 8, 12, 12, 21, tzinfo=IST),
+                        datetime(2026, 8, 12, 23, 59, tzinfo=IST),
+                        datetime(2026, 8, 13, 0, 1, tzinfo=IST),
                     )
                 )
                 self.scheduler = StandaloneScheduler(
                     report_root,
                     query,
-                    cleanup_callback,
                     lambda: next(times),
                     lambda target, results=iter((True, False)): next(results),
                     stdout=unused["stdout"],
@@ -400,7 +406,7 @@ class SchedulerCliTests(TestCase):
                 self.scheduler.run()
 
         with mock.patch.object(wallet_quota_scheduler.AppSettings, "load", return_value=settings), mock.patch.object(
-            wallet_quota_scheduler.wallet_quota, "main", side_effect=lambda *args: query_calls.append(args) or 0
+            wallet_quota_scheduler.wallet_quota, "main", side_effect=query
         ), mock.patch.object(
             wallet_quota_scheduler, "StandaloneScheduler", BoundedScheduler
         ):
@@ -409,7 +415,11 @@ class SchedulerCliTests(TestCase):
             )
 
         self.assertEqual(result, 0)
-        self.assertFalse(expired.exists())
+        self.assertEqual(reports_at_query, [original_reports, original_reports])
+        self.assertEqual(
+            {path: path.read_bytes() for path in original_reports}, original_reports
+        )
+        self.assertTrue(expired.is_dir())
         self.assertTrue(sentinel.is_file())
         self.assertTrue(unknown.is_dir())
         self.assertTrue(current.is_dir())
@@ -417,8 +427,7 @@ class SchedulerCliTests(TestCase):
         self.assertEqual(
             stdout.getvalue(),
             "Scheduler started\n"
-            "Report cleanup: deleted 1, preserved 2\n"
-            "Next scheduled run: 2026-08-12 12:20 IST\n"
-            "Next scheduled run: 2026-08-12 12:40 IST\n",
+            "Next scheduled run: 2026-08-13 00:00 IST\n"
+            "Next scheduled run: 2026-08-13 00:20 IST\n",
         )
-        self.assertEqual(stderr.getvalue(), "Unrecognized report directory preserved\n")
+        self.assertEqual(stderr.getvalue(), "")

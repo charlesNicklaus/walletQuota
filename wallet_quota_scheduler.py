@@ -9,7 +9,6 @@ from typing import Optional, Sequence, TextIO
 
 import wallet_quota
 from walletquota.config import AppSettings, ConfigError
-from walletquota.retention import CleanupResult, cleanup_expired_reports
 from walletquota.scheduler import (
     IST,
     SchedulerAlreadyRunning,
@@ -26,17 +25,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--verbose", action="store_true")
     return parser
-
-
-def _log_cleanup(result: CleanupResult, stdout: TextIO, stderr: TextIO) -> None:
-    print(
-        "Report cleanup: deleted {}, preserved {}".format(
-            len(result.deleted), len(result.preserved)
-        ),
-        file=stdout,
-    )
-    for warning in result.warnings:
-        print(warning, file=stderr)
 
 
 def main(
@@ -71,11 +59,6 @@ def main(
     if args.verbose:
         query_args.append("--verbose")
 
-    def cleanup(today):
-        result = cleanup_expired_reports(report_directory, today)
-        _log_cleanup(result, stdout, stderr)
-        return result
-
     previous_handler = None
     installed_handler = False
 
@@ -91,7 +74,6 @@ def main(
             scheduler = StandaloneScheduler(
                 report_directory,
                 lambda: wallet_quota.main(query_args, stdout, stderr),
-                cleanup,
                 lambda: datetime.now(IST),
                 stdout=stdout,
                 stderr=stderr,

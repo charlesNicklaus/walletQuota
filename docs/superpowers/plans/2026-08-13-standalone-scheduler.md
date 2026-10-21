@@ -1,5 +1,7 @@
 # Standalone Scheduler Implementation Plan
 
+> Historical plan: automatic report cleanup was removed at the user's request on 2026-10-21. The current scheduler preserves historical reports; do not restore the cleanup steps below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a manually started Python process that queries walletQuota at IST `:00/:20/:40`, keeps the existing manual CLI, and removes only confirmed walletQuota exports from prior IST dates.

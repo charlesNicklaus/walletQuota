@@ -127,7 +127,7 @@ python3 wallet_quota_scheduler.py --verbose
 python3 wallet_quota.py --verbose
 ```
 
-定时器不会补跑错过的时间点，也不会让查询重叠；退出后需要由人手动重启。它委托给同一条手动查询命令及同一份 `--env-file`，没有 Codex、cron、launchd 或开机自启动集成。只有本工具拥有的已导出报告快照会在 IST 日期边界过期时清理，包含兼容的旧手动报告；无法识别的目录一律保留。
+定时器不会补跑错过的时间点，也不会让查询重叠；退出后需要由人手动重启。它委托给同一条手动查询命令及同一份 `--env-file`，没有 Codex、cron、launchd 或开机自启动集成。所有历史报告持续保留；启动和跨日均不自动删除报告。
 
 旧 ATG 专用入口仍然可用。它只运行 `atgpay`，并保留原有筛选参数：
 
@@ -160,6 +160,18 @@ python3 scripts/merge_wallet_reports.py \
 合并工具不联网，不修改输入文件；金额从逐笔订单重新计算，只有完整成功渠道计入可信总计。同一渠道重复出现时会拒绝合并，避免把两个时间点的订单池重复累加。各渠道原始时间和元数据会保留，报告的时间范围覆盖最早开始至最晚结束；不同时间采集的快照不代表同时余额。
 
 订单池实时变化可能使跨页快照不完整。MillerPay 和 PenguinPay 的本地 `*_PAGE_SIZE` 可在配置允许的范围内调大，以减少翻页次数；是否完整仍以实际返回数据和完整性校验为准。
+
+### PostgreSQL 建表与数据导入
+
+Mac Studio 可使用 [PostgreSQL 建表脚本](sql/schema.postgresql.sql)创建抓取批次、渠道快照、订单和账户四张表。每次报告独立留存，同一报告重复导入不会重复增加记录；可信汇总视图只统计完整成功渠道。
+
+```bash
+psql -v ON_ERROR_STOP=1 -d walletquota -f sql/schema.postgresql.sql
+python3 scripts/export_postgres.py path/to/aggregate.json --output reports/postgres-data.sql
+psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres-data.sql
+```
+
+先创建 `walletquota` 数据库，输入路径替换为实际的 `aggregate.json`。导出工具离线生成权限为 `0600` 的本地 SQL；其中可能包含完整账户信息，应保留在被忽略的 `reports/` 目录。建表、查询和时区说明见 [数据库使用说明](sql/README.md)。
 
 ## 综合输出
 

@@ -3,6 +3,7 @@
 *.env
 !.env.example
 .local-secrets/
+*.data.sql
 .venv/
 venv/
 __pycache__/

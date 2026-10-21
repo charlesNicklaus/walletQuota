@@ -90,9 +90,6 @@ class StandaloneSchedulerTests(TestCase):
         def clock():
             return next(times)
 
-        def cleanup(today):
-            events.append(("cleanup", today))
-
         def query():
             result = next(query_results)
             events.append(("query", result))
@@ -105,7 +102,6 @@ class StandaloneSchedulerTests(TestCase):
         scheduler = StandaloneScheduler(
             Path("unused-reports"),
             query,
-            cleanup,
             clock,
             wait,
             io.StringIO(),
@@ -113,9 +109,9 @@ class StandaloneSchedulerTests(TestCase):
         )
         return scheduler, events, targets
 
-    def test_startup_cleans_then_queries_and_same_day_cycles_only_query(self):
+    def test_startup_queries_immediately_and_same_day_cycles_query(self):
         scheduler, events, targets = self.scheduler(
-            (ist(12, 12, 0), ist(12, 12, 1), ist(12, 12, 20), ist(12, 12, 21)),
+            (ist(12, 12, 1), ist(12, 12, 21)),
             (True, False),
             (0, 3),
         )
@@ -124,14 +120,14 @@ class StandaloneSchedulerTests(TestCase):
 
         self.assertEqual(
             events,
-            [("cleanup", ist(12, 0, 0).date()), ("query", 0), ("query", 3)],
+            [("query", 0), ("query", 3)],
         )
         self.assertEqual(targets, [ist(12, 12, 20), ist(12, 12, 40)])
         self.assertEqual(scheduler.query_exit_codes, (0, 3))
 
-    def test_midnight_cycle_cleans_before_query(self):
+    def test_midnight_cycle_queries_on_the_next_boundary(self):
         scheduler, events, targets = self.scheduler(
-            (ist(12, 23, 40), ist(12, 23, 41), ist(13, 0, 0), ist(13, 0, 1)),
+            (ist(12, 23, 41), ist(13, 0, 1)),
             (True, False),
             (1, 2),
         )
@@ -141,9 +137,7 @@ class StandaloneSchedulerTests(TestCase):
         self.assertEqual(
             events,
             [
-                ("cleanup", ist(12, 0, 0).date()),
                 ("query", 1),
-                ("cleanup", ist(13, 0, 0).date()),
                 ("query", 2),
             ],
         )
@@ -152,31 +146,31 @@ class StandaloneSchedulerTests(TestCase):
 
     def test_slow_query_waits_only_for_the_next_future_boundary(self):
         scheduler, events, targets = self.scheduler(
-            (ist(12, 12, 0), ist(12, 12, 45)),
+            (ist(12, 12, 45),),
             (False,),
             (0,),
         )
 
         scheduler.run()
 
-        self.assertEqual(events, [("cleanup", ist(12, 0, 0).date()), ("query", 0)])
+        self.assertEqual(events, [("query", 0)])
         self.assertEqual(targets, [ist(12, 13, 0)])
 
     def test_stop_request_exits_without_another_query(self):
         scheduler, events, targets = self.scheduler(
-            (ist(12, 12, 0), ist(12, 12, 1)),
+            (ist(12, 12, 1),),
             (False,),
             (0,),
         )
 
         scheduler.run()
 
-        self.assertEqual(events, [("cleanup", ist(12, 0, 0).date()), ("query", 0)])
+        self.assertEqual(events, [("query", 0)])
         self.assertEqual(targets, [ist(12, 12, 20)])
 
     def test_query_exceptions_are_safe_and_do_not_stop_the_loop(self):
         events = []
-        times = iter((ist(12, 12, 0), ist(12, 12, 1), ist(12, 12, 20), ist(12, 12, 21)))
+        times = iter((ist(12, 12, 1), ist(12, 12, 21)))
         stderr = io.StringIO()
         query_calls = 0
 
@@ -191,7 +185,6 @@ class StandaloneSchedulerTests(TestCase):
         scheduler = StandaloneScheduler(
             Path("unused-reports"),
             query,
-            lambda today: events.append("cleanup"),
             lambda: next(times),
             lambda target, results=iter((True, False)): next(results),
             io.StringIO(),
@@ -200,7 +193,7 @@ class StandaloneSchedulerTests(TestCase):
 
         scheduler.run()
 
-        self.assertEqual(events, ["cleanup", "query", "query"])
+        self.assertEqual(events, ["query", "query"])
         self.assertEqual(scheduler.query_exit_codes, (0,))
         self.assertEqual(stderr.getvalue(), "Scheduled query failed\n")
 
@@ -210,8 +203,7 @@ class StandaloneSchedulerTests(TestCase):
         scheduler = StandaloneScheduler(
             Path("unused-reports"),
             lambda: 0,
-            lambda today: None,
-            lambda times=iter((ist(12, 12, 0), ist(12, 12, 1))): next(times),
+            lambda: ist(12, 12, 1),
             lambda target: False,
             stdout,
             stderr,
@@ -224,58 +216,3 @@ class StandaloneSchedulerTests(TestCase):
             "Scheduler started\nNext scheduled run: 2026-08-12 12:20 IST\n",
         )
         self.assertEqual(stderr.getvalue(), "")
-
-    def test_startup_cleanup_failure_queries_and_retries_on_the_same_date(self):
-        events = []
-        stderr = io.StringIO()
-        cleanup_calls = 0
-        scheduler = StandaloneScheduler(
-            Path("unused-reports"),
-            lambda: events.append("query") or 0,
-            lambda today: None,
-            lambda times=iter((ist(12, 12, 0), ist(12, 12, 1), ist(12, 12, 20), ist(12, 12, 21))): next(times),
-            lambda target, results=iter((True, False)): next(results),
-            io.StringIO(),
-            stderr,
-        )
-
-        def cleanup(today):
-            nonlocal cleanup_calls
-            cleanup_calls += 1
-            events.append(("cleanup", today))
-            if cleanup_calls == 1:
-                raise RuntimeError("secret")
-
-        scheduler.cleanup = cleanup
-        scheduler.run()
-
-        self.assertEqual(cleanup_calls, 2)
-        self.assertEqual(events, [("cleanup", ist(12, 0, 0).date()), "query", ("cleanup", ist(12, 0, 0).date()), "query"])
-        self.assertEqual(stderr.getvalue(), "Scheduled cleanup failed\n")
-
-    def test_rollover_cleanup_failure_queries_and_retries_on_next_cycle(self):
-        events = []
-        stderr = io.StringIO()
-        cleanup_calls = []
-
-        def cleanup(today):
-            cleanup_calls.append(today)
-            events.append(("cleanup", today))
-            if today == ist(13, 0, 0).date() and cleanup_calls.count(today) == 1:
-                raise RuntimeError("secret")
-
-        scheduler = StandaloneScheduler(
-            Path("unused-reports"),
-            lambda: events.append("query") or 0,
-            cleanup,
-            lambda times=iter((ist(12, 23, 40), ist(12, 23, 41), ist(13, 0, 0), ist(13, 0, 1), ist(13, 0, 20), ist(13, 0, 21))): next(times),
-            lambda target, results=iter((True, True, False)): next(results),
-            io.StringIO(),
-            stderr,
-        )
-
-        scheduler.run()
-
-        self.assertEqual(cleanup_calls, [ist(12, 0, 0).date(), ist(13, 0, 0).date(), ist(13, 0, 0).date()])
-        self.assertEqual(events, [("cleanup", ist(12, 0, 0).date()), "query", ("cleanup", ist(13, 0, 0).date()), "query", ("cleanup", ist(13, 0, 0).date()), "query"])
-        self.assertEqual(stderr.getvalue(), "Scheduled cleanup failed\n")

@@ -5,11 +5,11 @@
 ```sh
 createdb walletquota
 psql -v ON_ERROR_STOP=1 -d walletquota -f sql/migrations/0001_create_wallet_tables.sql
-python3 scripts/export_postgres.py path/to/aggregate.json --output reports/postgres-data.sql
-psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres-data.sql
+python3 scripts/export_postgres.py reports/20260812_160000/aggregate_20260812_160000.json --output reports/postgres_20260812_160000.data.sql
+psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres_20260812_160000.data.sql
 ```
 
-输入必须是标准报告目录中的 `aggregate.json`；`.firecrawl/latest-four-refresh.json` 是指向报告的索引，不能直接作为输入。导出程序离线生成 SQL，不连接数据库，也不需要安装 PostgreSQL Python 驱动。数据库连接和数据导入均由本机 `psql` 执行。
+输入必须是标准综合报告 JSON，请将示例替换为实际报告路径。每次抓取的报告名包含本机时间戳，例如 `aggregate_20260812_160000.json`；导出程序按 JSON 内容识别输入，旧版 `aggregate.json` 仍可使用。`.firecrawl/latest-four-refresh.json` 是指向报告的索引，不能直接作为输入。导出程序离线生成 SQL，不连接数据库，也不需要安装 PostgreSQL Python 驱动；手动指定 `--output` 时由你决定 SQL 文件名。数据库连接和数据导入均由本机 `psql` 执行。
 
 `migrations/0001_create_wallet_tables.sql` 是可直接执行的 PostgreSQL migration，在一个事务内创建四张业务表、索引、汇总视图以及版本记录表 `public.wallet_schema_migrations`。成功后记录版本 `0001`；重复执行会跳过已经应用的版本，不覆盖表或已有数据。失败时整个事务回滚，版本也不会被标记为成功。
 
@@ -50,4 +50,4 @@ LIMIT 10;
 
 账户数据可能包含未脱敏的银行卡号和 UPI。生成的 SQL 与原始报告应保留在本机被 Git 忽略的 `reports/` 目录，勿提交到仓库。上述导出命令只生成文件；需要持续抓取并自动导入时，配置 `.env` 中的渠道账号和 `PGDATABASE=walletquota`，然后执行项目根目录的 `./start.sh`。具体启动、日志和停止命令见 [项目说明](../README.md#mac-studio-持续抓取并自动入库)。
 
-持续模式每轮保存报告和 SQL，在写完 SQL 后创建带校验值的 `postgres.pending` 标记，再用非交互式 `psql -X -w -v ON_ERROR_STOP=1` 导入。连接参数通过环境变量传递，不放在命令行中。失败时保留待导入标记并在下轮重试，成功后改为 `postgres.imported`。报告、导入 SQL 和历史数据库记录持续保留；没有过期清理或级联删除配置。
+持续模式每轮保存带时间戳的报告和 SQL，例如 `aggregate_20260812_160000.json` 和 `postgres_20260812_160000.data.sql`。时间戳与快照目录一致，采用运行机器的本机时间；同一秒多次执行会连同文件名保留 `_2`、`_3` 后缀。在写完 SQL 后创建带校验值的 `postgres_20260812_160000.pending` 标记，再用非交互式 `psql -X -w -v ON_ERROR_STOP=1` 导入。连接参数通过环境变量传递，不放在命令行中。失败时保留待导入标记并在下轮重试，成功后仅将后缀改为 `.imported`。队列仍兼容旧版 `postgres.pending` 和 `postgres.data.sql`。报告、导入 SQL 和历史数据库记录持续保留；没有过期清理或级联删除配置。`reports/continuous.log` 是后台进程的持续日志，文件名不随抓取批次变化。

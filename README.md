@@ -140,7 +140,7 @@ tail -f reports/continuous.log
 
 脚本从任意工作目录都可启动，会进入项目目录、脱离终端并显示实际采集进程 PID；日志权限为 `0600`。进程启动信息不代表首轮抓取或数据库导入已成功，应查看日志中的渠道状态、`imported` 和 `pending`。首次立即抓取，之后沿用 IST 每小时 `:00`、`:20`、`:40` 的调度；同一报告目录的进程锁避免重复采集。Mac 上存在 `caffeinate` 时会在进程存活期间阻止空闲睡眠。
 
-每轮保存新的 `aggregate.json`、订单 CSV 和 `postgres.data.sql`，然后通过本机 `psql` 自动导入。数据库不可用时保留 `postgres.pending`；后续周期先完成新抓取，再按时间顺序重试待导入批次。导入成功后仅将标记改为 `postgres.imported`，历史报告和 SQL 持续保留。同一报告重复导入不会重复增加数据库记录。
+每轮报告文件名都带快照目录的本机时间戳，例如 `aggregate_20260812_160000.json`、`penguinpay_orders_20260812_160000.csv` 和 `postgres_20260812_160000.data.sql`，然后通过本机 `psql` 自动导入。数据库不可用时保留 `postgres_20260812_160000.pending`；后续周期先完成新抓取，再按时间顺序重试待导入批次。导入成功后仅将标记后缀改为 `.imported`，历史报告和 SQL 持续保留。旧版 `postgres.pending` 和 `postgres.data.sql` 批次仍可自动补导。同一报告重复导入不会重复增加数据库记录。`reports/continuous.log` 是整个后台进程的持续日志，保留固定文件名。
 
 数据库连接可以使用当前终端的标准 PostgreSQL 环境变量，也可在 `.env` 设置 `PGDATABASE`、`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSFILE`、`PGSERVICE`、`PGSERVICEFILE`、`PGSSLMODE` 或本地 `PGPASSWORD`。密码不放入命令行；后台导入不交互询问密码。使用与手工 `psql` 相同的本机连接设置即可。
 
@@ -172,15 +172,15 @@ HOYO PAY 使用固定的 `https://api.hoyopay-app.com/app` API 和只读端点�
 
 ### 离线合并已保存快照
 
-标准 `aggregate.json` 和独立 HOYO PAY 结果可以合并为新的标准报告目录。把下面的输入路径换成实际报告路径：
+标准综合报告 JSON 和独立 HOYO PAY 结果可以合并为新的标准报告目录。把下面的输入路径换成实际报告路径：
 
 ```bash
 python3 scripts/merge_wallet_reports.py \
-  path/to/aggregate.json path/to/hoyopay-result.json \
+  reports/20260812_160000/aggregate_20260812_160000.json path/to/hoyopay-result.json \
   --output-dir reports
 ```
 
-合并工具不联网，不修改输入文件；金额从逐笔订单重新计算，只有完整成功渠道计入可信总计。同一渠道重复出现时会拒绝合并，避免把两个时间点的订单池重复累加。各渠道原始时间和元数据会保留，报告的时间范围覆盖最早开始至最晚结束；不同时间采集的快照不代表同时余额。
+合并工具按 JSON 内容识别输入，旧版 `aggregate.json` 仍可使用。工具不联网，不修改输入文件；金额从逐笔订单重新计算，只有完整成功渠道计入可信总计。同一渠道重复出现时会拒绝合并，避免把两个时间点的订单池重复累加。各渠道原始时间和元数据会保留，报告的时间范围覆盖最早开始至最晚结束；不同时间采集的快照不代表同时余额。
 
 订单池实时变化可能使跨页快照不完整。MillerPay 和 PenguinPay 的本地 `*_PAGE_SIZE` 可在配置允许的范围内调大，以减少翻页次数；是否完整仍以实际返回数据和完整性校验为准。
 
@@ -190,11 +190,11 @@ Mac Studio 可直接执行 [PostgreSQL migration](sql/migrations/0001_create_wal
 
 ```bash
 psql -v ON_ERROR_STOP=1 -d walletquota -f sql/migrations/0001_create_wallet_tables.sql
-python3 scripts/export_postgres.py path/to/aggregate.json --output reports/postgres-data.sql
-psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres-data.sql
+python3 scripts/export_postgres.py reports/20260812_160000/aggregate_20260812_160000.json --output reports/postgres_20260812_160000.data.sql
+psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres_20260812_160000.data.sql
 ```
 
-先创建 `walletquota` 数据库，输入路径替换为实际的 `aggregate.json`。Migration 在事务中执行，重复执行会跳过已应用版本。旧的 `sql/schema.postgresql.sql` 命令仍可使用。导出工具离线生成权限为 `0600` 的本地 SQL；其中可能包含完整账户信息，应保留在被忽略的 `reports/` 目录。建表、查询和时区说明见 [数据库使用说明](sql/README.md)。
+先创建 `walletquota` 数据库，输入路径替换为实际的综合报告 JSON。导出工具按内容解析，旧版 `aggregate.json` 仍可使用；手动指定 `--output` 时由你决定 SQL 文件名。Migration 在事务中执行，重复执行会跳过已应用版本。旧的 `sql/schema.postgresql.sql` 命令仍可使用。导出工具离线生成权限为 `0600` 的本地 SQL；其中可能包含完整账户信息，应保留在被忽略的 `reports/` 目录。建表、查询和时区说明见 [数据库使用说明](sql/README.md)。
 
 ## 综合输出
 
@@ -231,28 +231,28 @@ penguinpay: success
     …（其余固定范围省略）
 ```
 
-每次运行生成独立快照目录：
+每次运行生成独立快照目录，目录和文件名都带本机时间戳（Mac Studio 设置为新加坡时区时使用新加坡时间）：
 
 ```text
-reports/20260812_153000/
-├── aggregate.json
-├── atgpay_orders.csv
-├── millerpay_orders.csv
-└── penguinpay_orders.csv
+reports/20260812_160000/
+├── aggregate_20260812_160000.json
+├── atgpay_orders_20260812_160000.csv
+├── millerpay_orders_20260812_160000.csv
+└── penguinpay_orders_20260812_160000.csv
 ```
 
-- `aggregate.json` 包含顶层 `total`、全部渠道状态、摘要、金额分布、元数据和订单。
+- `aggregate_<timestamp>.json` 包含顶层 `total`、全部渠道状态、摘要、金额分布、元数据和订单。
 - 金额分布固定为五个互不重叠的范围：`<100`（不含 100）、`100-10000`（含 100、不含 10000）、`10000-20000`（含 10000、不含 20000）、`20000-50000`（两端都含）和 `>50000`（不含 50000）。终端中 `total` 与每个非错误渠道都会完整显示这五行，即使某行数量为 0。
 - 成功渠道生成自己的订单 CSV。
 - 已取得订单的不完整渠道也生成 CSV，但不进入 `total`。
 - 没有订单的错误渠道不生成空 CSV。
-- 同一秒多次执行会使用 `_2`、`_3` 目录，不覆盖历史结果。
+- 同一秒多次执行会使用 `_2`、`_3` 目录，文件名也带相同后缀，例如 `20260812_160000_2/aggregate_20260812_160000_2.json`，不覆盖历史结果。
 
 ### 收款账户与敏感输出
 
 ATG Pay、MillerPay 和 PenguinPay 都读取完整订单池，并尽力从同样三类只读来源收集账户信息：已绑定 UPI、已绑定银行卡，以及“我的已领取任务”中的订单详情收款方。PenguinPay 账户来源：绑定 UPI、绑定银行卡、已领取订单详情。账户收集失败只会记录安全的警告，不会让已经完成的订单池快照变为失败。
 
-终端只显示掩码账户标识；订单 CSV 不包含账户信息；`penguinpay_orders.csv` 不包含账户字段。完整 UPI、银行卡号和 IFSC 仅会写入本机快照目录的 `aggregate.json`（例如 `channels.atgpay.accounts`、`channels.millerpay.accounts` 和 `channels.penguinpay.accounts`），因此该文件是敏感数据：不要上传、共享或提交到仓库；`channels.penguinpay.accounts` 可包含完整本机账户标识。`账户: 0` 只表示当前登录未返回账户，不表示渠道或商户没有账户。
+终端只显示掩码账户标识；订单 CSV 不包含账户信息；`penguinpay_orders_<timestamp>.csv` 不包含账户字段。完整 UPI、银行卡号和 IFSC 仅会写入本机快照目录的 `aggregate_<timestamp>.json`（例如 `channels.atgpay.accounts`、`channels.millerpay.accounts` 和 `channels.penguinpay.accounts`），因此该文件是敏感数据：不要上传、共享或提交到仓库；`channels.penguinpay.accounts` 可包含完整本机账户标识。`账户: 0` 只表示当前登录未返回账户，不表示渠道或商户没有账户。
 
 所有金额按 INR 汇总。跨渠道订单唯一键是“渠道名 + 订单号”，不同渠道相同订单号不会互相覆盖。
 

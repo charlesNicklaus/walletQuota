@@ -32,7 +32,7 @@ class OperatorExampleTests(TestCase):
             "sortType=1",
             "orderType=1",
             "pageSize=10",
-            "penguinpay_orders.csv",
+            "penguinpay_orders_<timestamp>.csv",
             "channels.penguinpay.accounts",
             "账户: 0",
         ):

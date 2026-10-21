@@ -95,8 +95,14 @@ class ReportBundleTests(TestCase):
         bundle = write_report_bundle(aggregate_fixture(), self.directory)
 
         self.assertEqual(bundle.directory.name, "20260812_160000")
-        self.assertEqual(bundle.aggregate_json.name, "aggregate.json")
+        self.assertEqual(bundle.aggregate_json.name, "aggregate_20260812_160000.json")
         self.assertEqual(set(bundle.channel_csv), {"atgpay", "xxxpay"})
+        self.assertEqual(
+            bundle.channel_csv["atgpay"].name, "atgpay_orders_20260812_160000.csv"
+        )
+        self.assertEqual(
+            bundle.channel_csv["xxxpay"].name, "xxxpay_orders_20260812_160000.csv"
+        )
         self.assertTrue(bundle.aggregate_json.is_file())
         self.assertTrue(bundle.channel_csv["atgpay"].is_file())
         self.assertNotIn("badpay", bundle.channel_csv)
@@ -153,12 +159,29 @@ class ReportBundleTests(TestCase):
 
     def test_same_timestamp_uses_numbered_directory_without_overwrite(self):
         first = write_report_bundle(aggregate_fixture(), self.directory)
+        original_bytes = {
+            path: path.read_bytes() for path in first.directory.iterdir()
+        }
         second = write_report_bundle(aggregate_fixture(), self.directory)
 
         self.assertEqual(first.directory.name, "20260812_160000")
         self.assertEqual(second.directory.name, "20260812_160000_2")
         self.assertTrue(first.aggregate_json.is_file())
         self.assertTrue(second.aggregate_json.is_file())
+        self.assertEqual(first.aggregate_json.name, "aggregate_20260812_160000.json")
+        self.assertEqual(second.aggregate_json.name, "aggregate_20260812_160000_2.json")
+        self.assertEqual(
+            second.channel_csv["atgpay"].name,
+            "atgpay_orders_20260812_160000_2.csv",
+        )
+        self.assertTrue(
+            {path.name for path in first.directory.iterdir()}.isdisjoint(
+                path.name for path in second.directory.iterdir()
+            )
+        )
+        self.assertEqual(
+            original_bytes, {path: path.read_bytes() for path in original_bytes}
+        )
 
     def test_report_does_not_persist_unrelated_process_secrets(self):
         result = aggregate_fixture()

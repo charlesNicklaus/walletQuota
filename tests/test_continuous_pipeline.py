@@ -1,4 +1,5 @@
 import importlib
+import hashlib
 import io
 import json
 import os
@@ -100,7 +101,7 @@ class ContinuousPipelineTests(TestCase):
         return code, stdout.getvalue() + stderr.getvalue(), collect, client, process
 
     def bundles(self):
-        return sorted(path.parent for path in self.reports.glob("*/aggregate.json"))
+        return sorted(path.parent for path in self.reports.glob("*/aggregate_*.json"))
 
     def test_four_channels_export_import_private_history_and_pg_environment(self):
         with mock.patch.dict(os.environ, {"PARENT_FIXTURE": "kept"}, clear=True):
@@ -111,7 +112,16 @@ class ContinuousPipelineTests(TestCase):
         self.assertEqual(collect.call_args.args[0].page_size, 17)
         self.assertEqual(client.call_args.args[1], self.pipeline.hoyo.SPEC)
         bundle = self.bundles()[0]
-        payload = json.loads((bundle / "aggregate.json").read_text())
+        stamp = bundle.name
+        self.assertEqual({path.name for path in bundle.iterdir()}, {
+            "aggregate_{}.json".format(stamp),
+            "postgres_{}.data.sql".format(stamp),
+            "postgres_{}.imported".format(stamp),
+            *["{}_orders_{}.csv".format(name, stamp) for name in (
+                "atgpay", "millerpay", "penguinpay", "hoyopay"
+            )],
+        })
+        payload = json.loads((bundle / "aggregate_{}.json".format(bundle.name)).read_text())
         self.assertEqual(list(payload["channels"]), [
             "atgpay", "millerpay", "penguinpay", "hoyopay"
         ])
@@ -121,15 +131,15 @@ class ContinuousPipelineTests(TestCase):
         for key in ("started_at", "finished_at"):
             self.assertEqual(datetime.fromisoformat(payload["metadata"][key]).utcoffset().total_seconds(), 0)
         self.assertLessEqual(payload["metadata"]["started_at"], payload["metadata"]["finished_at"])
-        self.assertFalse((bundle / "postgres.pending").exists())
-        marker = json.loads((bundle / "postgres.imported").read_text())
-        self.assertIn(marker["run_id"], (bundle / "postgres.data.sql").read_text())
+        self.assertFalse((bundle / "postgres_{}.pending".format(bundle.name)).exists())
+        marker = json.loads((bundle / "postgres_{}.imported".format(bundle.name)).read_text())
+        self.assertIn(marker["run_id"], (bundle / "postgres_{}.data.sql".format(bundle.name)).read_text())
         for path in bundle.iterdir():
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertNotIn(SECRET, path.read_text())
         args, kwargs = process.call_args
         self.assertEqual(args[0], ["psql", "-X", "-w", "-v", "ON_ERROR_STOP=1",
-                                  "-f", str((bundle / "postgres.data.sql").resolve())])
+                                  "-f", str((bundle / "postgres_{}.data.sql".format(bundle.name)).resolve())])
         self.assertEqual(kwargs["timeout"], 60)
         self.assertTrue(kwargs["capture_output"])
         self.assertEqual(kwargs["env"]["PARENT_FIXTURE"], "kept")
@@ -144,7 +154,7 @@ class ContinuousPipelineTests(TestCase):
     def test_hoyo_empty_pool_is_complete_and_missing_credentials_only_fail_hoyo(self):
         code, _, _, _, _ = self.invoke(result=hoyo_result(empty=True))
         self.assertEqual(code, 0)
-        payload = json.loads((self.bundles()[0] / "aggregate.json").read_text())
+        payload = json.loads((self.bundles()[0] / "aggregate_{}.json".format(self.bundles()[0].name)).read_text())
         self.assertEqual(payload["channels"]["hoyopay"]["status"], "success")
         self.assertEqual(payload["total"]["order_count"], 3)
         self.env_file.write_text("ENABLED_PROVIDERS=atgpay,millerpay,penguinpay\n")
@@ -154,7 +164,7 @@ class ContinuousPipelineTests(TestCase):
         self.assertEqual(code, 3)
         collect.assert_not_called()
         process.assert_called_once()
-        payload = json.loads((self.bundles()[-1] / "aggregate.json").read_text())
+        payload = json.loads((self.bundles()[-1] / "aggregate_{}.json".format(self.bundles()[-1].name)).read_text())
         self.assertEqual(payload["channels"]["hoyopay"]["error"]["category"], "configuration")
         self.assertEqual(payload["total"]["order_count"], 3)
         self.assertIn("provider=hoyopay status=error observed_orders=0 observed_amount=0 error=configuration", logs)
@@ -167,7 +177,7 @@ class ContinuousPipelineTests(TestCase):
 
         self.assertEqual(code, 3)
         self.assertEqual(process.call_count, 1)
-        payload = json.loads((self.bundles()[0] / "aggregate.json").read_text())
+        payload = json.loads((self.bundles()[0] / "aggregate_{}.json".format(self.bundles()[0].name)).read_text())
         self.assertEqual(payload["metadata"]["status"], "partial")
         self.assertEqual(payload["total"]["order_count"], 2)
         self.assertEqual(len(payload["channels"]["hoyopay"]["orders"]), 1)
@@ -181,7 +191,7 @@ class ContinuousPipelineTests(TestCase):
         self.assertEqual(code, 3)
         process.assert_called_once()
         first = self.bundles()[0]
-        self.assertTrue((first / "postgres.pending").is_file())
+        self.assertTrue((first / "postgres_{}.pending".format(first.name)).is_file())
 
         def retry(args, **kwargs):
             self.assertEqual(len(self.bundles()), 2)
@@ -192,12 +202,12 @@ class ContinuousPipelineTests(TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(process.call_count, 2)
-        self.assertEqual(process.call_args_list[0].args[0][-1], str((first / "postgres.data.sql").resolve()))
+        self.assertEqual(process.call_args_list[0].args[0][-1], str((first / "postgres_{}.data.sql".format(first.name)).resolve()))
         self.assertEqual(len(self.bundles()), 2)
         for directory in self.bundles():
-            self.assertTrue((directory / "aggregate.json").is_file())
-            self.assertTrue((directory / "postgres.data.sql").is_file())
-            self.assertTrue((directory / "postgres.imported").is_file())
+            self.assertTrue((directory / "aggregate_{}.json".format(directory.name)).is_file())
+            self.assertTrue((directory / "postgres_{}.data.sql".format(directory.name)).is_file())
+            self.assertTrue((directory / "postgres_{}.imported".format(directory.name)).is_file())
         self.assertNotIn(SECRET, logs + second_logs)
 
     def test_an_offline_database_stops_drain_after_first_failure(self):
@@ -206,14 +216,74 @@ class ContinuousPipelineTests(TestCase):
         code, logs, _, _, process = self.invoke(runner=failure)
         self.assertEqual(code, 3)
         self.assertEqual(process.call_count, 1)
-        self.assertEqual(len(list(self.reports.glob("*/postgres.pending"))), 2)
+        self.assertEqual(len(list(self.reports.glob("*/postgres_*.pending"))), 2)
         self.assertNotIn(SECRET, logs)
+
+    def test_upgrade_retries_legacy_pending_batch_with_new_timestamped_capture(self):
+        code, _, _, _, _ = self.invoke(runner=lambda *a, **k:
+            subprocess.CompletedProcess(a[0], 1))
+        self.assertEqual(code, 3)
+        old = self.bundles()[0]
+        (old / "postgres_{}.data.sql".format(old.name)).rename(old / "postgres.data.sql")
+        (old / "postgres_{}.pending".format(old.name)).rename(old / "postgres.pending")
+        (old / "aggregate_{}.json".format(old.name)).rename(old / "aggregate.json")
+        old_json = (old / "aggregate.json").read_bytes()
+        old_sql = (old / "postgres.data.sql").read_bytes()
+
+        code, logs, _, _, process = self.invoke()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(process.call_count, 2)
+        self.assertEqual(process.call_args_list[0].args[0][-1], str((old / "postgres.data.sql").resolve()))
+        self.assertFalse((old / "postgres.pending").exists())
+        self.assertTrue((old / "postgres.imported").is_file())
+        self.assertEqual((old / "aggregate.json").read_bytes(), old_json)
+        self.assertEqual((old / "postgres.data.sql").read_bytes(), old_sql)
+        fresh = self.bundles()[0]
+        self.assertNotEqual(old, fresh)
+        self.assertTrue((fresh / "postgres_{}.imported".format(fresh.name)).is_file())
+        self.assertIn("imported=2 pending=0", logs)
+
+    def test_timestamped_marker_symlink_is_not_an_import_candidate(self):
+        bundle = self.reports / "20261021_160000"
+        bundle.mkdir(parents=True)
+        outside = self.root / "outside.pending"
+        outside.write_text("{}")
+        marker = bundle / "postgres_20261021_160000.pending"
+        marker.symlink_to(outside)
+
+        with mock.patch.object(self.pipeline.subprocess, "run") as process:
+            self.assertEqual(self.pipeline.drain_pending(self.reports, {}), (0, 0, False))
+
+        process.assert_not_called()
+        self.assertTrue(marker.is_symlink())
+        self.assertEqual(outside.read_text(), "{}")
+
+    def test_timestamped_pending_marker_imports_its_matching_sql(self):
+        bundle = self.reports / "20261021_160000_2"
+        bundle.mkdir(parents=True)
+        sql = bundle / "postgres_20261021_160000_2.data.sql"
+        sql.write_text("-- fixture SQL\n")
+        marker = bundle / "postgres_20261021_160000_2.pending"
+        marker.write_text(json.dumps({
+            "run_id": "00000000-0000-0000-0000-000000000001",
+            "sha256": hashlib.sha256(sql.read_bytes()).hexdigest(),
+        }))
+
+        with mock.patch.object(self.pipeline.subprocess, "run", return_value=
+                               subprocess.CompletedProcess([], 0)) as process:
+            self.assertEqual(self.pipeline.drain_pending(self.reports, {}), (1, 0, False))
+
+        self.assertEqual(process.call_args.args[0][-1], str(sql.resolve()))
+        self.assertFalse(marker.exists())
+        self.assertTrue((bundle / "postgres_20261021_160000_2.imported").is_file())
+        self.assertEqual(sql.read_text(), "-- fixture SQL\n")
 
     def test_failed_export_never_queues_or_imports_an_incomplete_sql_file(self):
         atomic = self.pipeline._atomic_text
 
         def fail_sql(path, writer):
-            if path.name == "postgres.data.sql":
+            if path.name.endswith(".data.sql"):
                 raise OSError(SECRET)
             return atomic(path, writer)
 
@@ -223,8 +293,8 @@ class ContinuousPipelineTests(TestCase):
         self.assertEqual(code, 1)
         process.assert_not_called()
         self.assertEqual(len(self.bundles()), 1)
-        self.assertEqual(list(self.reports.glob("*/postgres.pending")), [])
-        self.assertEqual(list(self.reports.glob("*/postgres.data.sql")), [])
+        self.assertEqual(list(self.reports.glob("*/postgres_*.pending")), [])
+        self.assertEqual(list(self.reports.glob("*/postgres_*.data.sql")), [])
         self.assertNotIn(SECRET, logs)
 
     def test_default_keeps_only_configured_channels_and_never_overrides_pagination(self):
@@ -267,7 +337,7 @@ class ContinuousPipelineTests(TestCase):
     def test_drain_ignores_nested_and_symlink_bundles_and_rejects_changed_sql(self):
         self.invoke(runner=lambda *a, **k: subprocess.CompletedProcess(a[0], 1))
         first = self.bundles()[0]
-        (first / "postgres.data.sql").write_text("changed fixture export")
+        (first / "postgres_{}.data.sql".format(first.name)).write_text("changed fixture export")
         outside = self.root / "outside"
         outside.mkdir()
         (outside / "postgres.pending").write_text("{}")
@@ -280,5 +350,5 @@ class ContinuousPipelineTests(TestCase):
 
         self.assertEqual(code, 3)
         process.assert_not_called()
-        self.assertTrue((first / "postgres.pending").is_file())
+        self.assertTrue((first / "postgres_{}.pending".format(first.name)).is_file())
         self.assertTrue((outside / "postgres.pending").is_file())

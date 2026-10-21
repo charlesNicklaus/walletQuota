@@ -113,13 +113,13 @@ class SchedulerPostgresTests(TestCase):
         self.assertEqual(schedulers[0].query_exit_codes, (3, 0))
         self.assertEqual(psql.call_count, 3)
         reports = self.root / 'reports'
-        bundles = sorted(reports.glob('*/aggregate.json'))
+        bundles = sorted(reports.glob('*/aggregate_*.json'))
         self.assertEqual(len(bundles), 2)
         for source in bundles:
             self.assertEqual(json.loads(source.read_text())['total']['order_count'], 4)
-            self.assertTrue(source.with_name('postgres.data.sql').is_file())
-            self.assertTrue(source.with_name('postgres.imported').is_file())
-            self.assertFalse(source.with_name('postgres.pending').exists())
+            self.assertTrue(source.with_name('postgres_{}.data.sql'.format(source.parent.name)).is_file())
+            self.assertTrue(source.with_name('postgres_{}.imported'.format(source.parent.name)).is_file())
+            self.assertFalse(source.with_name('postgres_{}.pending'.format(source.parent.name)).exists())
         self.assertNotIn('FIXTURE_ONLY', stdout.getvalue() + stderr.getvalue())
         with SchedulerLock.acquire(reports):
             pass

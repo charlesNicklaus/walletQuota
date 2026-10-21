@@ -133,7 +133,7 @@ def build_export(report):
 
 def main(argv=None):
     parser = SafeArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="Saved aggregate.json")
+    parser.add_argument("input", type=Path, help="Saved aggregate JSON report")
     parser.add_argument("--output", type=Path, required=True, help="Local SQL data file (contains account data)")
     args = parser.parse_args(argv)
     try:

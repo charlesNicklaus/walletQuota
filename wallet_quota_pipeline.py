@@ -97,10 +97,10 @@ def pending_imports(report_root):
     """Only immediate, real bundle directories belong to this import queue."""
     root = Path(report_root).resolve()
     return sorted(
-        child / "postgres.pending" for child in root.iterdir()
+        marker for child in root.iterdir()
         if child.is_dir() and not child.is_symlink()
-        and (child / "postgres.pending").is_file()
-        and not (child / "postgres.pending").is_symlink()
+        for marker in (child / "postgres.pending", *child.glob("postgres_*.pending"))
+        if marker.is_file() and not marker.is_symlink()
     )
 
 
@@ -110,7 +110,7 @@ def drain_pending(report_root, environment):
     imported = 0
     for marker in markers:
         try:
-            sql_path = marker.with_name("postgres.data.sql")
+            sql_path = marker.with_suffix(".data.sql")
             if sql_path.is_symlink() or not sql_path.is_file():
                 raise ValueError("Missing private SQL export")
             data = json.loads(marker.read_text(encoding="utf-8"))
@@ -125,7 +125,7 @@ def drain_pending(report_root, environment):
             )
             if process.returncode != 0:
                 return imported, len(markers) - imported, True
-            marker.replace(marker.with_name("postgres.imported"))
+            marker.replace(marker.with_suffix(".imported"))
             imported += 1
         except Exception:
             # libpq, the shell, paths, and exception messages may contain secrets.
@@ -146,13 +146,14 @@ def run_cycle(settings, include_hoyo=False, verbose=False,
         root = settings.report_directory.resolve()
         bundle = write_report_bundle(aggregate, root)
         run_id, sql = build_export(merge_reports([bundle.aggregate_json]))
-        sql_path = bundle.directory / "postgres.data.sql"
+        basename = "postgres_{}".format(bundle.directory.name)
+        sql_path = bundle.directory / (basename + ".data.sql")
         _atomic_text(sql_path, lambda handle: handle.write(sql))
         marker = {
             "run_id": str(run_id),
             "sha256": hashlib.sha256(sql_path.read_bytes()).hexdigest(),
         }
-        _atomic_text(bundle.directory / "postgres.pending",
+        _atomic_text(bundle.directory / (basename + ".pending"),
                      lambda handle: json.dump(marker, handle, sort_keys=True))
         imported, pending, failed = drain_pending(root, postgres_environment(settings.values))
     except ConfigError:

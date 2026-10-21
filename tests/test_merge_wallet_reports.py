@@ -62,8 +62,9 @@ class MergeWalletReportsTests(TestCase):
         )
 
     def merged_payload(self):
-        paths = list((self.directory / "reports").glob("*/aggregate.json"))
+        paths = list((self.directory / "reports").glob("*/aggregate_*.json"))
         self.assertEqual(len(paths), 1)
+        self.assertEqual(paths[0].name, "aggregate_{}.json".format(paths[0].parent.name))
         return json.loads(paths[0].read_text(encoding="utf-8"))
 
     def test_merges_standard_and_hoyo_decimal_types_and_original_times(self):

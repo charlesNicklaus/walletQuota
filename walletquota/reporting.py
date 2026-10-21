@@ -285,7 +285,8 @@ class ReportBundle:
 def write_report_bundle(result: AggregateResult, directory: Path) -> ReportBundle:
     local_stamp = result.finished_at.astimezone().strftime("%Y%m%d_%H%M%S")
     bundle_directory = _reserve_directory(Path(directory), local_stamp)
-    aggregate_json = bundle_directory / "aggregate.json"
+    file_stamp = bundle_directory.name
+    aggregate_json = bundle_directory / "aggregate_{}.json".format(file_stamp)
     channel_csv: Dict[str, Path] = {}
 
     payload = {
@@ -312,7 +313,9 @@ def write_report_bundle(result: AggregateResult, directory: Path) -> ReportBundl
     for channel in result.channels:
         if not channel.orders:
             continue
-        path = bundle_directory / "{}_orders.csv".format(channel.provider)
+        path = bundle_directory / "{}_orders_{}.csv".format(
+            channel.provider, file_stamp
+        )
 
         def write_csv(handle: Any, orders=channel.orders) -> None:
             writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)

@@ -16,3 +16,4 @@
 - [x] Apply schema and synthetic exports twice in a temporary PostgreSQL engine; verify trusted totals, row counts, timestamps, constraints and string round trips, including both string-escape session settings.
 - [x] Export the latest four-channel report into ignored local SQL; import it twice in a temporary PostgreSQL engine and verify the expected row count and exact trusted total.
 - [x] Run the full 235-test suite, independently review the change and check the explicit source-file set for private data, preparing the main-branch commit and push.
+- [x] Follow-up: move the schema to standalone migration `sql/migrations/0001_create_wallet_tables.sql`, retain the old psql entry, and verify version tracking, repeat execution, same-schema adoption and transaction rollback in PostgreSQL.

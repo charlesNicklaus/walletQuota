@@ -4,14 +4,24 @@
 
 ```sh
 createdb walletquota
-psql -v ON_ERROR_STOP=1 -d walletquota -f sql/schema.postgresql.sql
+psql -v ON_ERROR_STOP=1 -d walletquota -f sql/migrations/0001_create_wallet_tables.sql
 python3 scripts/export_postgres.py path/to/aggregate.json --output reports/postgres-data.sql
 psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres-data.sql
 ```
 
 输入必须是标准报告目录中的 `aggregate.json`；`.firecrawl/latest-four-refresh.json` 是指向报告的索引，不能直接作为输入。导出程序离线生成 SQL，不连接数据库，也不需要安装 PostgreSQL Python 驱动。数据库连接和数据导入均由本机 `psql` 执行。
 
-建表脚本在事务内创建四张表、索引和一个汇总视图。可以对相同表结构重复执行；`IF NOT EXISTS` 不会升级已经存在的旧表结构。生成的数据脚本使用确定性的批次 ID 和 `ON CONFLICT DO NOTHING`，同一份报告重复导入不会重复增加数据；报告内容变化会作为新批次保留。
+`migrations/0001_create_wallet_tables.sql` 是可直接执行的 PostgreSQL migration，在一个事务内创建四张业务表、索引、汇总视图以及版本记录表 `public.wallet_schema_migrations`。成功后记录版本 `0001`；重复执行会跳过已经应用的版本，不覆盖表或已有数据。失败时整个事务回滚，版本也不会被标记为成功。
+
+已执行旧版建表脚本的同结构数据库也可以执行此 migration，以保留数据并补上版本记录。`IF NOT EXISTS` 不会修复其他不兼容表结构。后续结构修改应新增编号 migration，保留已发布版本不变。版本记录可用以下 SQL 查询：
+
+```sql
+SELECT version, description, applied_at
+FROM public.wallet_schema_migrations
+ORDER BY version;
+```
+
+旧命令 `psql -v ON_ERROR_STOP=1 -d walletquota -f sql/schema.postgresql.sql` 仍兼容，通过 [psql 的相对引用命令 `\ir`](https://www.postgresql.org/docs/current/app-psql.html)加载同一 migration。数据库图形客户端可直接执行编号 migration 文件，它包含完整 SQL。生成的数据脚本使用确定性的批次 ID 和 `ON CONFLICT DO NOTHING`，同一份报告重复导入不会重复增加数据；报告内容变化会作为新批次保留。
 
 | 表或视图 | 用途 |
 | --- | --- |

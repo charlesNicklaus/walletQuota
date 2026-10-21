@@ -163,15 +163,15 @@ python3 scripts/merge_wallet_reports.py \
 
 ### PostgreSQL 建表与数据导入
 
-Mac Studio 可使用 [PostgreSQL 建表脚本](sql/schema.postgresql.sql)创建抓取批次、渠道快照、订单和账户四张表。每次报告独立留存，同一报告重复导入不会重复增加记录；可信汇总视图只统计完整成功渠道。
+Mac Studio 可直接执行 [PostgreSQL migration](sql/migrations/0001_create_wallet_tables.sql)，创建抓取批次、渠道快照、订单和账户四张业务表，并记录已应用版本。每次报告独立留存，同一报告重复导入不会重复增加记录；可信汇总视图只统计完整成功渠道。
 
 ```bash
-psql -v ON_ERROR_STOP=1 -d walletquota -f sql/schema.postgresql.sql
+psql -v ON_ERROR_STOP=1 -d walletquota -f sql/migrations/0001_create_wallet_tables.sql
 python3 scripts/export_postgres.py path/to/aggregate.json --output reports/postgres-data.sql
 psql -v ON_ERROR_STOP=1 -d walletquota -f reports/postgres-data.sql
 ```
 
-先创建 `walletquota` 数据库，输入路径替换为实际的 `aggregate.json`。导出工具离线生成权限为 `0600` 的本地 SQL；其中可能包含完整账户信息，应保留在被忽略的 `reports/` 目录。建表、查询和时区说明见 [数据库使用说明](sql/README.md)。
+先创建 `walletquota` 数据库，输入路径替换为实际的 `aggregate.json`。Migration 在事务中执行，重复执行会跳过已应用版本。旧的 `sql/schema.postgresql.sql` 命令仍可使用。导出工具离线生成权限为 `0600` 的本地 SQL；其中可能包含完整账户信息，应保留在被忽略的 `reports/` 目录。建表、查询和时区说明见 [数据库使用说明](sql/README.md)。
 
 ## 综合输出
 

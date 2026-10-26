@@ -7,11 +7,13 @@ total:    所有完整成功渠道的可信总计
 atgpay:   ATG Pay 的订单数、金额、金额分布或错误状态
 millerpay: MillerPay 的订单数、金额、金额分布或错误状态
 penguinpay: PenguinPay 的订单数、金额、金额分布或错误状态
+sharkpay: SharkPay 的订单数、金额、金额分布或错误状态
+smartwallet: SmartWallet 的订单数、金额、金额分布或错误状态
 ```
 
 一个渠道失败不会影响其他渠道。失败和不完整渠道会保留在报告中，但不会混入 `total`。
 
-当前已接入 `atgpay`、`millerpay` 和 `penguinpay`；多渠道注册、并发、故障隔离和综合报告框架已经完成。工具只读取订单池，不会接单、付款、提交 UTR、绑卡或修改账户设置。
+当前已接入 `atgpay`、`millerpay`、`penguinpay`、`sharkpay` 和 `smartwallet`；多渠道注册、并发、故障隔离和综合报告框架已经完成。工具只读取订单池，不会接单、付款、提交 UTR、绑卡或修改账户设置。
 
 ## 环境要求
 
@@ -27,13 +29,17 @@ cp .env.example .env
 在 `.env` 中填写本地账号：
 
 ```dotenv
-ENABLED_PROVIDERS=atgpay,millerpay,penguinpay
+ENABLED_PROVIDERS=atgpay,millerpay,penguinpay,sharkpay,smartwallet
 ATGPAY_PHONE=你的印度手机号
 ATGPAY_PASSWORD=你的密码
 MILLERPAY_PHONE=你的印度手机号
 MILLERPAY_PASSWORD=你的密码
 PENGUINPAY_PHONE=你的印度手机号
 PENGUINPAY_PASSWORD=你的密码
+SHARKPAY_PHONE=你的印度手机号
+SHARKPAY_PASSWORD=你的密码
+SMARTWALLET_PHONE=你的印度手机号
+SMARTWALLET_PASSWORD=你的密码
 REPORT_DIRECTORY=reports
 ```
 
@@ -90,6 +96,21 @@ PenguinPay 默认 sortType=1、orderType=1、pageSize=10。
 | `PENGUINPAY_REQUEST_DELAY_MS` | `150` | 分页请求之间的等待毫秒数 |
 | `PENGUINPAY_TIMEOUT_SECONDS` | `30` | 单次 HTTP 请求超时秒数 |
 
+### SharkPay 与 SmartWallet 配置
+
+两个已注册渠道使用独立的本地账号字段，并与现有渠道并发运行：
+
+| 渠道 | 名称 | 账号字段 | 密码字段 | 固定 API 基址 |
+| --- | --- | --- | --- | --- |
+| SharkPay | `sharkpay` | `SHARKPAY_PHONE` | `SHARKPAY_PASSWORD` | `https://api.sharkpay-app.com/app` |
+| SmartWallet | `smartwallet` | `SMARTWALLET_PHONE` | `SMARTWALLET_PASSWORD` | `https://api.smartwallet-app.com/app` |
+
+Web Origin 分别固定为 `https://app-web.sharkpay-app.com` 和 `https://app-web.smartwallet-app.com`。SmartWallet 使用此新域名，配置名为 `smartwallet`。
+
+各渠道支持对应前缀的 `*_SORT_TYPE`、`*_ORDER_TYPE`、`*_PAGE_SIZE`、`*_REQUEST_DELAY_MS`、`*_TIMEOUT_SECONDS`。公开前端确认排序、池类型和页大小默认分别为 `1`、`1`、`10`；本工具默认分页等待 `150` 毫秒、超时 `30` 秒，页大小允许 `1–1000`。`orderType=1` 是默认 Low Amount 池，High Amount 池可用 `*_ORDER_TYPE=2` 单独抓取。单次结果只统计所配置的池类型，并保留分页完整性状态。
+
+将两者加入 `ENABLED_PROVIDERS` 后，`./start.sh` 会在每轮自动抓取、生成北京时间文件名并导入现有 PostgreSQL 表；无需新增 migration。Mac Studio 更新代码后，还需要在本地 `.env` 添加上述四个账号字段，并重启采集进程。
+
 旧版 `ATG_PHONE`、`ATG_PASSWORD` 和其他 `ATG_*` 配置仍然兼容；同一个配置同时出现时，新的 `ATGPAY_*` 优先。报告根目录优先使用 `REPORT_DIRECTORY`，缺失时回退到旧 `ATG_REPORT_DIRECTORY`，也可以通过 `--output-dir` 临时覆盖。
 
 ## 使用
@@ -131,7 +152,7 @@ python3 wallet_quota.py --verbose
 
 ### Mac Studio 持续抓取并自动入库
 
-PostgreSQL migration 执行完成后，在本地 `.env` 配置各渠道账号，以及 `PGDATABASE=walletquota`。`ENABLED_PROVIDERS` 控制 ATG、Miller、Penguin；启动脚本额外启用 Hoyo，读取 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`。某渠道配置或采集失败时，其余渠道继续运行，失败及不完整渠道不计入可信总计。
+PostgreSQL migration 执行完成后，在本地 `.env` 配置各渠道账号，以及 `PGDATABASE=walletquota`。`ENABLED_PROVIDERS` 控制 ATG、Miller、Penguin、Shark 和 SmartWallet；启动脚本额外启用 Hoyo，读取 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`。某渠道配置或采集失败时，其余渠道继续运行，失败及不完整渠道不计入可信总计。
 
 ```bash
 ./start.sh
@@ -182,7 +203,7 @@ python3 scripts/merge_wallet_reports.py \
 
 合并工具按 JSON 内容识别输入，旧版 `aggregate.json` 仍可使用。工具不联网，不修改输入文件；金额从逐笔订单重新计算，只有完整成功渠道计入可信总计。同一渠道重复出现时会拒绝合并，避免把两个时间点的订单池重复累加。各渠道原始时间和元数据会保留，报告的时间范围覆盖最早开始至最晚结束；不同时间采集的快照不代表同时余额。
 
-订单池实时变化可能使跨页快照不完整。MillerPay 和 PenguinPay 的本地 `*_PAGE_SIZE` 可在配置允许的范围内调大，以减少翻页次数；是否完整仍以实际返回数据和完整性校验为准。
+订单池实时变化可能使跨页快照不完整。各渠道的本地 `*_PAGE_SIZE` 可在配置允许的范围内调大，以减少翻页次数；是否完整仍以实际返回数据和完整性校验为准。
 
 ### PostgreSQL 建表与数据导入
 
@@ -238,7 +259,9 @@ reports/20260812_160000/
 ├── aggregate_20260812_160000.json
 ├── atgpay_orders_20260812_160000.csv
 ├── millerpay_orders_20260812_160000.csv
-└── penguinpay_orders_20260812_160000.csv
+├── penguinpay_orders_20260812_160000.csv
+├── sharkpay_orders_20260812_160000.csv
+└── smartwallet_orders_20260812_160000.csv
 ```
 
 - `aggregate_<timestamp>.json` 包含顶层 `total`、全部渠道状态、摘要、金额分布、元数据和订单。
@@ -326,6 +349,8 @@ POST /pay/my/task
 POST /pay/order/detail
 ```
 
-三个渠道只读取订单与账户信息，绝不会调用 `/pay/receive/task`，也不会认领、接取或锁定订单、付款、提交 UTR、绑卡、删除、更新或修改账户设置。程序不会绕过 Cloudflare、验证码、登录或访问控制。服务端修改接口或签名规则时会安全失败，不会猜测或调用其他端点。
+上述渠道只读取订单与账户信息，绝不会调用 `/pay/receive/task`，也不会认领、接取或锁定订单、付款、提交 UTR、绑卡、删除、更新或修改账户设置。程序不会绕过 Cloudflare、验证码、登录或访问控制。服务端修改接口或签名规则时会安全失败，不会猜测或调用其他端点。
 
 PenguinPay 永不调用 `/pay/receive/task`、`/pay/submit/utr`、`/pay/cancel/task`、`/user/account/wallet`、`/pay/debit/upis`，也永不调用付款、绑定、解绑、删除、更新或其他变更端点。
+
+SharkPay 和 SmartWallet 同样仅允许上述六个登录及只读端点；各自的 API 与 Web 主机固定，不会将一个渠道的凭据发送到另一个渠道。

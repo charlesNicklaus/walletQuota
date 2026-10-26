@@ -13,7 +13,7 @@ class OperatorExampleTests(TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
         expected_env_lines = {
-            "ENABLED_PROVIDERS=atgpay,millerpay,penguinpay",
+            "ENABLED_PROVIDERS=atgpay,millerpay,penguinpay,sharkpay,smartwallet",
             "PENGUINPAY_PHONE=",
             "PENGUINPAY_PASSWORD=",
             "PENGUINPAY_API_BASE=https://api.penguinpay-app.com/app",

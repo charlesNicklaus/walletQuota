@@ -22,6 +22,34 @@ def spec():
 
 
 class ChannelSpecTests(TestCase):
+    def test_shark_has_its_own_trusted_host_pair(self):
+        channel = replace(
+            spec(), name="sharkpay", api_base="https://api.sharkpay-app.com/app",
+            web_origin="https://app-web.sharkpay-app.com",
+        )
+        self.assertEqual(
+            channel.url_for(channel.api_base, "/pay/debit/task"),
+            "https://api.sharkpay-app.com/app/pay/debit/task",
+        )
+        with self.assertRaisesRegex(ValueError, "trusted API endpoint"):
+            channel.url_for("https://api.millerpay-app.com/app", "/auth/login")
+        with self.assertRaisesRegex(ValueError, "trusted web origin"):
+            replace(channel, web_origin="https://app-web.millerpay-app.com")
+
+    def test_smartwallet_cannot_use_the_shark_host_pair(self):
+        channel = replace(
+            spec(), name="smartwallet", api_base="https://api.smartwallet-app.com/app",
+            web_origin="https://app-web.smartwallet-app.com",
+        )
+        self.assertEqual(
+            channel.url_for(channel.api_base, "/pay/debit/task"),
+            "https://api.smartwallet-app.com/app/pay/debit/task",
+        )
+        with self.assertRaisesRegex(ValueError, "trusted API endpoint"):
+            channel.url_for("https://api.sharkpay-app.com/app", "/auth/login")
+        with self.assertRaisesRegex(ValueError, "trusted web origin"):
+            replace(channel, web_origin="https://app-web.sharkpay-app.com")
+
     def test_exact_read_only_allowlist_and_url_resolution(self):
         channel = spec()
         self.assertEqual(

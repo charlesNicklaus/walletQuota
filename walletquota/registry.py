@@ -5,6 +5,8 @@ from .models import ProviderResult
 from .providers.atgpay import AtgPayProvider
 from .providers.millerpay import MillerPayProvider
 from .providers.penguinpay import PenguinPayProvider
+from .providers.sharkpay import SharkPayProvider
+from .providers.smartwallet import SmartWalletProvider
 
 
 ProviderFactory = Callable[[Mapping[str, str], Mapping[str, Any]], Any]
@@ -18,6 +20,12 @@ PROVIDER_FACTORIES: Mapping[str, ProviderFactory] = {
         values, overrides=overrides
     ),
     "penguinpay": lambda values, overrides: PenguinPayProvider(
+        values, overrides=overrides
+    ),
+    "sharkpay": lambda values, overrides: SharkPayProvider(
+        values, overrides=overrides
+    ),
+    "smartwallet": lambda values, overrides: SmartWalletProvider(
         values, overrides=overrides
     ),
 }

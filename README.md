@@ -163,6 +163,8 @@ python3 wallet_quota.py --verbose
 
 ### Mac Studio 持续抓取并自动入库
 
+Sulu Pay 需要查看哪些已查代付池为空时，可同时启用独立的渠道汇总同步。Mac Studio 安装步骤、Sulu 的建表脚本和运营查询见 [Sulu Pay 订单池汇总](sql/README.md#在-sulu-pay-中查看上游代付订单池)。
+
 PostgreSQL migration 执行完成后，在本地 `.env` 配置各渠道账号，以及 `PGDATABASE=walletquota`。`ENABLED_PROVIDERS` 控制 ATG、Miller、Penguin、Shark、SmartWallet 和 ShowPay。启动脚本额外启用 Hoyo，读取 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`。某渠道配置或采集失败时，其余渠道继续运行，失败及不完整渠道不计入可信总计。
 
 ```bash

@@ -67,7 +67,7 @@ def insert(table, columns, rows):
     )
 
 
-def build_export(report):
+def identify_report(report):
     # The loader preserves each original report's top-level metadata here.
     source_metadata = clean_json(report.channels[0].metadata["source_reports"][-1]["metadata"])
     payload = {
@@ -81,13 +81,18 @@ def build_export(report):
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     run_id = uuid5(NAMESPACE_URL, "walletQuota:report:" + digest)
+    return run_id, digest, payload
+
+
+def build_export(report):
+    run_id, digest, payload = identify_report(report)
     chunks = [
         "-- walletQuota PostgreSQL data export; apply sql/schema.postgresql.sql first.\n",
         "-- Run: {}\n".format(run_id),
         "BEGIN;\nSET LOCAL standard_conforming_strings = on;\n",
         insert("wallet_crawl_runs", (
             "run_id", "source_sha256", "started_at", "finished_at", "status", "metadata",
-        ), [(run_id, digest, report.started_at, report.finished_at, report.status, source_metadata)]),
+        ), [(run_id, digest, report.started_at, report.finished_at, report.status, payload["metadata"])]),
     ]
     snapshots, orders, accounts = [], [], []
     for channel in report.channels:

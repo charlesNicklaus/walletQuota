@@ -6,13 +6,21 @@ Mac Studio 的 `./start.sh` 每轮可以向第二个 PostgreSQL 库单独写入�
 
 ### 首次部署
 
+如果线上 PostgreSQL 还没有汇总库，可创建专用库 `sulu_pool`。在更新后的项目根目录，用有 `CREATEDB` 权限的账号连接线上服务器执行：
+
+```bash
+psql -X -h 线上主机 -p 5432 -U 建库用户 -d postgres -f sql/sulu_pay/create_database.sql
+```
+
+脚本会创建 `sulu_pool`，切换到该库并安装汇总表和视图。使用 DataGrip 或 pgAdmin 时，在连接到 `postgres` 的 SQL 控制台开启自动提交，单独执行 `CREATE DATABASE sulu_pool;`，再在下方配置工具中填入库名 `sulu_pool`。工具可用建表账号在空库初始化。若使用独立写入账号，让 DBA 先在新库执行 `sql/sulu_pay/payout_pool.sql`，授予该账号 CONNECT、public schema 的 USAGE 及汇总表的 INSERT 权限。
+
 在 Mac Studio 项目目录执行：
 
 ```bash
 git pull --ff-only origin main && python3 scripts/configure_sulu_db.py
 ```
 
-按照 DBA 提供的信息输入主机、端口、库名、用户名、SSL 模式和密码。通过 SSH 隧道访问时先建立隧道；使用 `verify-full` 时应使用证书匹配的主机名，并按 DBA 的说明配置根证书。工具先识别目标库中的 `public.t_payout_order`，按需安装汇总表和视图，然后检查 INSERT 权限。写入账号权限不足时，请让 DBA 在 Sulu 库运行 `sql/sulu_pay/payout_pool.sql`、授予写入权限后再执行上述命令。
+按照 DBA 提供的信息输入主机、端口、库名、用户名、SSL 模式和密码。通过 SSH 隧道访问时先建立隧道；使用 `verify-full` 时应使用证书匹配的主机名，并按 DBA 的说明配置根证书。工具识别专用汇总库 `sulu_pool` 或含有 `public.t_payout_order` 的 Sulu Pay 业务库，按需安装汇总表和视图，然后检查 INSERT 权限。
 
 服务文件和密码文件保存在本机 `.local-secrets/` 的私有子目录中。验证成功后工具将其绝对路径及服务名写入现有 `.env` 的三个 `SULU_PG*` 配置项。已运行带有 Sulu 同步功能的采集进程会在下一轮读取配置；如果正在运行升级前的旧程序，请重启采集。日志中 `SuluPay 汇总: imported=1 pending=0` 表示已导入一批且队列已清空。
 

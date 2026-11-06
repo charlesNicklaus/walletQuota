@@ -21,7 +21,15 @@ from walletquota.reporting import _atomic_text
 PROBE = """
 SELECT json_build_array(
     current_database(),
-    to_regclass('public.t_payout_order') IS NOT NULL,
+    to_regclass('public.t_payout_order') IS NOT NULL OR (
+        current_database() = 'sulu_pool' AND (
+            to_regclass('public.t_payout_pool_snapshot') IS NOT NULL OR NOT EXISTS (
+                SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+                  AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+            )
+        )
+    ),
     to_regclass('public.t_payout_pool_snapshot') IS NOT NULL AND EXISTS (
         SELECT 1 FROM pg_attribute
         WHERE attrelid = to_regclass('public.v_payout_pool_current')
@@ -49,9 +57,9 @@ def probe(psql, environment, dbname):
     result = subprocess.run(psql + ["-At", "-c", PROBE], env=environment,
                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                             text=True, timeout=20, check=True)
-    actual, is_sulu, ready, can_insert = json.loads(result.stdout)
-    if actual != dbname or not is_sulu:
-        raise ValueError("目标库名不匹配，或找不到 Sulu Pay 的 public.t_payout_order。请核对连接信息。")
+    actual, valid_target, ready, can_insert = json.loads(result.stdout)
+    if actual != dbname or not valid_target:
+        raise ValueError("请连接 Sulu Pay 业务库，或专用汇总库 sulu_pool（空库或已安装汇总表）。")
     return ready, can_insert
 
 

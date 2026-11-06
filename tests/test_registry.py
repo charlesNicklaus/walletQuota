@@ -28,7 +28,7 @@ def factory(name):
 class RegistryTests(TestCase):
     def test_new_channels_are_registered_in_configured_order(self):
         settings = AppSettings.from_values({
-            "ENABLED_PROVIDERS": "smartwallet,sharkpay",
+            "ENABLED_PROVIDERS": "smartwallet,showpay,sharkpay",
             "SMARTWALLET_PHONE": "fixture-phone",
             "SMARTWALLET_PASSWORD": "fixture-password",
             "SHARKPAY_PHONE": "fixture-phone",
@@ -37,7 +37,7 @@ class RegistryTests(TestCase):
 
         providers = build_providers(settings)
 
-        self.assertEqual([p.name for p in providers], ["smartwallet", "sharkpay"])
+        self.assertEqual([p.name for p in providers], ["smartwallet", "showpay", "sharkpay"])
         self.assertTrue(all(not isinstance(p, UnavailableProvider) for p in providers))
 
     def test_default_registry_builds_three_channels_in_configured_order(self):

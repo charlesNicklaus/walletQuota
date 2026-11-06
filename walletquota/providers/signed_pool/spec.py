@@ -20,6 +20,7 @@ _TRUSTED_PROVIDER_HOSTS = {
     "millerpay": ("api.millerpay-app.com", "app-web.millerpay-app.com"),
     "penguinpay": ("api.penguinpay-app.com", "app-web.penguinpay-app.com"),
     "sharkpay": ("api.sharkpay-app.com", "app-web.sharkpay-app.com"),
+    "showpay": ("api.showpayweb.com", "app-web.showpayweb.com"),
     "smartwallet": ("api.smartwallet-app.com", "app-web.smartwallet-app.com"),
 }
 

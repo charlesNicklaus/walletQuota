@@ -6,6 +6,7 @@ from .providers.atgpay import AtgPayProvider
 from .providers.millerpay import MillerPayProvider
 from .providers.penguinpay import PenguinPayProvider
 from .providers.sharkpay import SharkPayProvider
+from .providers.showpay import ShowPayProvider
 from .providers.smartwallet import SmartWalletProvider
 
 
@@ -23,6 +24,9 @@ PROVIDER_FACTORIES: Mapping[str, ProviderFactory] = {
         values, overrides=overrides
     ),
     "sharkpay": lambda values, overrides: SharkPayProvider(
+        values, overrides=overrides
+    ),
+    "showpay": lambda values, overrides: ShowPayProvider(
         values, overrides=overrides
     ),
     "smartwallet": lambda values, overrides: SmartWalletProvider(

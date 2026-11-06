@@ -9,11 +9,12 @@ millerpay: MillerPay 的订单数、金额、金额分布或错误状态
 penguinpay: PenguinPay 的订单数、金额、金额分布或错误状态
 sharkpay: SharkPay 的订单数、金额、金额分布或错误状态
 smartwallet: SmartWallet 的订单数、金额、金额分布或错误状态
+showpay:   ShowPay 的订单数、金额、金额分布或错误状态
 ```
 
 一个渠道失败不会影响其他渠道。失败和不完整渠道会保留在报告中，但不会混入 `total`。
 
-当前已接入 `atgpay`、`millerpay`、`penguinpay`、`sharkpay` 和 `smartwallet`；多渠道注册、并发、故障隔离和综合报告框架已经完成。工具只读取订单池，不会接单、付款、提交 UTR、绑卡或修改账户设置。
+当前已接入 `atgpay`、`millerpay`、`penguinpay`、`sharkpay`、`smartwallet` 和 `showpay`。工具通过各渠道的只读接口采集订单和账户信息。
 
 ## 环境要求
 
@@ -113,6 +114,16 @@ Web Origin 分别固定为 `https://app-web.sharkpay-app.com` 和 `https://app-w
 
 旧版 `ATG_PHONE`、`ATG_PASSWORD` 和其他 `ATG_*` 配置仍然兼容；同一个配置同时出现时，新的 `ATGPAY_*` 优先。报告根目录优先使用 `REPORT_DIRECTORY`，缺失时回退到旧 `ATG_REPORT_DIRECTORY`，也可以通过 `--output-dir` 临时覆盖。
 
+### ShowPay 配置
+
+在本机配置文件中填写 `SHOWPAY_PHONE` 和 `SHOWPAY_PASSWORD`，并把 `showpay` 加入 `ENABLED_PROVIDERS`。要单独运行，可将这两个字段和 `ENABLED_PROVIDERS=showpay` 保存到权限为 `0600` 的 `.env.showpay`，然后运行：
+
+```bash
+python3 wallet_quota.py --env-file .env.showpay
+```
+
+默认读取 ShowPay 的 Deposit → Task 订单池（`SHOWPAY_ORDER_TYPE=1`），按金额升序分页，每页 10 笔。要单独读取 More Earn 或 UPI 页签，可将 `SHOWPAY_ORDER_TYPE` 分别设为 `3` 或 `4`。每次报告统计一个订单池。登录和只读请求发往 `https://api.showpayweb.com/app`。
+
 ## 使用
 
 运行所有已启用渠道：
@@ -152,7 +163,7 @@ python3 wallet_quota.py --verbose
 
 ### Mac Studio 持续抓取并自动入库
 
-PostgreSQL migration 执行完成后，在本地 `.env` 配置各渠道账号，以及 `PGDATABASE=walletquota`。`ENABLED_PROVIDERS` 控制 ATG、Miller、Penguin、Shark 和 SmartWallet；启动脚本额外启用 Hoyo，读取 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`。某渠道配置或采集失败时，其余渠道继续运行，失败及不完整渠道不计入可信总计。
+PostgreSQL migration 执行完成后，在本地 `.env` 配置各渠道账号，以及 `PGDATABASE=walletquota`。`ENABLED_PROVIDERS` 控制 ATG、Miller、Penguin、Shark、SmartWallet 和 ShowPay。启动脚本额外启用 Hoyo，读取 `HOYOPAY_PHONE` 和 `HOYOPAY_PASSWORD`。某渠道配置或采集失败时，其余渠道继续运行，失败及不完整渠道不计入可信总计。
 
 ```bash
 ./start.sh

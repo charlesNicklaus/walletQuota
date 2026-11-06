@@ -22,6 +22,7 @@ CHANNEL_HOSTS = {
     "penguinpay": ("api.penguinpay-app.com", "app-web.penguinpay-app.com"),
     "sharkpay": ("api.sharkpay-app.com", "app-web.sharkpay-app.com"),
     "smartwallet": ("api.smartwallet-app.com", "app-web.smartwallet-app.com"),
+    "showpay": ("api.showpayweb.com", "app-web.showpayweb.com"),
     "hoyopay": ("api.hoyopay-app.com", "app-web.hoyopay-app.com"),
 }
 AMOUNTS = {
@@ -42,7 +43,7 @@ class NewChannelsPipelineTests(TestCase):
         self.reports = self.root / "reports"
         self.env_file = self.root / "channels.env"
         lines = [
-            "ENABLED_PROVIDERS=atgpay,millerpay,penguinpay,sharkpay,smartwallet",
+            "ENABLED_PROVIDERS=atgpay,millerpay,penguinpay,sharkpay,smartwallet,showpay",
             "PGDATABASE=fixture_walletquota",
         ]
         for name in CHANNEL_HOSTS:
@@ -130,13 +131,13 @@ class NewChannelsPipelineTests(TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         return code, json.loads(aggregate.read_text()), sql.read_text(), bundle, calls
 
-    def test_six_real_providers_keep_hosts_orders_and_sql_separate(self):
+    def test_real_providers_keep_hosts_orders_and_sql_separate(self):
         code, report, sql, bundle, calls = self.run_capture()
 
         self.assertEqual(code, 0)
         self.assertEqual(list(report["channels"]), list(CHANNEL_HOSTS))
-        self.assertEqual(report["total"]["order_count"], 6)
-        self.assertEqual(report["total"]["order_amount"], "210.21")
+        self.assertEqual(report["total"]["order_count"], 7)
+        self.assertEqual(report["total"]["order_amount"], "280.28")
         for name in CHANNEL_HOSTS:
             channel = report["channels"][name]
             self.assertEqual(channel["status"], "success")
@@ -154,8 +155,8 @@ class NewChannelsPipelineTests(TestCase):
         code, report, sql, bundle, calls = self.run_capture(failed_channel="sharkpay")
 
         self.assertEqual(code, 3)
-        self.assertEqual(report["total"]["order_count"], 5)
-        self.assertEqual(report["total"]["order_amount"], "170.17")
+        self.assertEqual(report["total"]["order_count"], 6)
+        self.assertEqual(report["total"]["order_amount"], "240.24")
         self.assertEqual(report["channels"]["sharkpay"]["status"], "error")
         self.assertEqual(report["channels"]["sharkpay"]["error"]["category"], "authentication")
         self.assertEqual(report["channels"]["smartwallet"]["status"], "success")

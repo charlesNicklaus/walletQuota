@@ -6,6 +6,18 @@ Mac Studio 的 `./start.sh` 每轮可以向第二个 PostgreSQL 库单独写入�
 
 ### 首次部署
 
+在 Mac Studio 项目目录执行：
+
+```bash
+git pull --ff-only origin main && python3 scripts/configure_sulu_db.py
+```
+
+按照 DBA 提供的信息输入主机、端口、库名、用户名、SSL 模式和密码。通过 SSH 隧道访问时先建立隧道；使用 `verify-full` 时应使用证书匹配的主机名，并按 DBA 的说明配置根证书。工具先识别目标库中的 `public.t_payout_order`，按需安装汇总表和视图，然后检查 INSERT 权限。写入账号权限不足时，请让 DBA 在 Sulu 库运行 `sql/sulu_pay/payout_pool.sql`、授予写入权限后再执行上述命令。
+
+服务文件和密码文件保存在本机 `.local-secrets/` 的私有子目录中。验证成功后工具将其绝对路径及服务名写入现有 `.env` 的三个 `SULU_PG*` 配置项。已运行带有 Sulu 同步功能的采集进程会在下一轮读取配置；如果正在运行升级前的旧程序，请重启采集。日志中 `SuluPay 汇总: imported=1 pending=0` 表示已导入一批且队列已清空。
+
+### 手动配置已有的 PostgreSQL 服务文件
+
 1. 在 Mac Studio 的项目目录执行 `git pull --ff-only origin main`。
 2. 在运行采集的 macOS 用户的 `~/.pg_service.conf` 中添加独立服务。把下例中的主机、库名和用户替换成 Sulu Pay PostgreSQL 的实际值，并采用该库要求的 TLS 配置。
 

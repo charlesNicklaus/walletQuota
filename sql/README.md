@@ -41,7 +41,9 @@ WHERE pool_state = 'scope_empty'
 ORDER BY observed_at DESC;
 ```
 
-查看全部七个渠道时，去掉 `WHERE` 并在查询列中加上 `pool_state`。缺失、失败、缺少范围或观测时间、数据过期、以及零笔但采集不完整，均返回 `unknown`。新鲜快照只要观察到订单就标记 `nonempty`，此时若 `complete=false`，笔数和金额只覆盖已观察部分。查询按采集批次排序，补传旧记录不会覆盖新一轮判断。
+查看全部七个渠道时，去掉 `WHERE` 并在查询列中加上 `provider`、`pool_state` 和 `requires_review`。缺失、失败、缺少范围或观测时间、数据过期、以及零笔但采集不完整，均返回 `unknown`。新鲜快照只要观察到订单就标记 `nonempty`，此时若 `complete=false`，笔数和金额只覆盖已观察部分。查询按采集批次排序，补传旧记录不会覆盖新一轮判断。
+
+`DONEPAY` 持续使用 MillerPay 原有 API（`api.millerpay-app.com`），`requires_review` 固定为 `true`。完整、新鲜的零笔快照显示 `review_required`（待复核），自动从上面的空池候选查询中排除。历史表仍保存实际观测的笔数和金额。已部署旧版视图的数据库，重新执行一次 `sql/sulu_pay/payout_pool.sql` 即可更新规则，无需重抓数据。
 
 映射关系为 ATG Pay → `AGTPAY`、MillerPay → `DONEPAY`、PenguinPay → `PENGUINPAY`、SharkPay → `SHARKPAY`、SmartWallet → `SMARTWALLET`、ShowPay → `SHOWPAY`、Hoyo Pay → `HOYOPAY`。范围字段 `order_types` 记录当前账号实际查询的页签。按默认配置，Hoyo 查 `1,2` 并按订单号去重，ATG 查 `4`，其余渠道查 `1`。MillerPay 的高额/SVIP 池需分别核对 `2` 和 `3`。空池可作为人工加量候选；实际派单仍取决于 Sulu 的渠道启用状态、金额限额和近期代付表现。
 

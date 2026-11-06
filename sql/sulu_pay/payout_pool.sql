@@ -26,9 +26,10 @@ CREATE INDEX IF NOT EXISTS t_payout_pool_snapshot_latest_idx
 -- Every row belongs to the newest capture. A missing channel cannot inherit
 -- an older capture's result. scope_empty applies only to the listed order_types.
 CREATE OR REPLACE VIEW public.v_payout_pool_current AS
-WITH providers(provider) AS (
-    VALUES ('atgpay'), ('millerpay'), ('penguinpay'), ('sharkpay'),
-           ('smartwallet'), ('showpay'), ('hoyopay')
+WITH providers(provider, requires_review) AS (
+    -- DONEPAY's crawler uses MillerPay's legacy API pending business review.
+    VALUES ('atgpay', false), ('millerpay', true), ('penguinpay', false),
+           ('sharkpay', false), ('smartwallet', false), ('showpay', false), ('hoyopay', false)
 ), latest AS (
     SELECT run_id, run_started_at
     FROM public.t_payout_pool_snapshot
@@ -44,10 +45,11 @@ SELECT p.provider, s.channel, s.observed_at, s.order_types, s.status, s.complete
                OR s.observed_at > statement_timestamp()
                OR latest.run_started_at > statement_timestamp() THEN 'unknown'
            WHEN s.order_count > 0 THEN 'nonempty'
-           WHEN s.status = 'success' AND s.complete AND s.order_count = 0 THEN 'scope_empty'
+           WHEN s.status = 'success' AND s.complete AND s.order_count = 0 THEN
+               CASE WHEN p.requires_review THEN 'review_required' ELSE 'scope_empty' END
            ELSE 'unknown'
        END AS pool_state,
-       latest.run_id, latest.run_started_at
+       latest.run_id, latest.run_started_at, p.requires_review
 FROM providers p
 LEFT JOIN latest ON true
 LEFT JOIN public.t_payout_pool_snapshot s
